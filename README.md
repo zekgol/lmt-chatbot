@@ -21,15 +21,11 @@ Save. Wait 30–60 seconds. Your fork is live at `https://<your-username>.github
 
 ## 4. Open the code
 
-Three ways — pick whichever suits you.
+**a. In your IDE of choice.** Clone your fork locally and open it in whichever editor you prefer. We recommend [VS Code](https://code.visualstudio.com/) (add the **Live Server** extension for instant reload) or JetBrains' [DataSpell](https://www.jetbrains.com/dataspell/) / [WebStorm](https://www.jetbrains.com/webstorm/) (free with a [student licence](https://www.jetbrains.com/community/education/)).
 
-**a. In your browser.** On your fork's main page, press `.` (the period key). GitHub opens a full VS Code in the browser at `github.dev/<your-username>/lmt-chatbot`.
+**b. Or edit online in GitHub.** On your fork's main page, press `.` (the period key). GitHub opens a full [VS Code in the browser](https://github.dev) at `github.dev/<your-username>/lmt-chatbot` — no install, no clone, commit from the Source Control panel.
 
-**b. Locally in VS Code.** `git clone` your fork, open it in VS Code. Install the **Live Server** extension for instant reload on save.
-
-**c. Locally in another IDE.** DataSpell, PyCharm, Sublime, WebStorm — any editor that can edit HTML works.
-
-If you have GitHub Copilot ([free for students](https://education.github.com/)), let it handle the boring edits.
+Either way, if you have [GitHub Copilot](https://education.github.com/) (free for students), let it handle the boring edits.
 
 ## 5. Make it yours
 
