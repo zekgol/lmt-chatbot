@@ -2,11 +2,16 @@ import streamlit as st
 from openai import OpenAI
 
 # Show title and description.
-st.title("💬 Chatbot")
+st.title("💬 Dad Jokes")
 st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+    "A dad-joke chatbot. Every reply is a dad joke, whatever you ask. "
+    "Uses OpenAI's GPT-3.5-Turbo. Paste an OpenAI API key to start "
+    "([get one here](https://platform.openai.com/account/api-keys))."
+)
+
+SYSTEM_PROMPT = (
+    "You are a dad. Every response you give must be a relevant dad joke about "
+    "what the user just said. Keep it short, groan-worthy, and family friendly."
 )
 
 # Ask user for their OpenAI API key via `st.text_input`.
@@ -39,12 +44,16 @@ else:
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate a response using the OpenAI API.
+        # Generate a response using the OpenAI API. The system prompt is
+        # prepended on every call so the model always stays in dad-joke mode.
         stream = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *(
+                    {"role": m["role"], "content": m["content"]}
+                    for m in st.session_state.messages
+                ),
             ],
             stream=True,
         )
