@@ -330,12 +330,12 @@
             <label for="model">Model</label>
           </div>
           <select id="model">
-            <option value="gpt-4o-mini">gpt-4o-mini (fast, cheap, good default)</option>
-            <option value="gpt-4o">gpt-4o (higher quality, slower)</option>
-            <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo (2025 baseline)</option>
+            <option value="gpt-5-mini">gpt-5-mini (latest, 2026)</option>
+            <option value="gpt-4.1-mini">gpt-4.1-mini (2025)</option>
+            <option value="gpt-4o-mini">gpt-4o-mini (2024)</option>
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo (2023 baseline)</option>
           </select>
-          <p class="help">Smaller models are faster and cheaper; bigger models hallucinate less and write better but cost more per message.</p>
+          <p class="help">Newest first. Mini/turbo variants only — fast and free-tier friendly. If your key rejects the newest, step down a generation.</p>
         </div>
 
         <div class="field">
@@ -427,7 +427,7 @@
         "the user just said. Keep it short, groan-worthy, and family friendly. " +
         "British English. No emojis.";
       const DEFAULTS = {
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         temperature: 0.8,
         top_p: 1.0,
         max_tokens: 1024,
