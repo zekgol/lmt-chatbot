@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dad Jokes — LMT Chatbot</title>
+    <title>Personal Assistant — LMT Chatbot</title>
     <meta
       name="description"
-      content="A static OpenAI chatbot hosted on GitHub Pages for the LMT Agents module. Settings drawer with system prompt, sampling controls, and conversation export."
+      content="A static OpenAI chatbot on GitHub Pages. Shape it into anything by editing the system prompt."
     />
     <style>
       :root {
@@ -72,9 +72,13 @@
       .topbar .spacer { flex: 1; }
       .topbar .stats {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: .72rem;
-        color: var(--muted);
+        font-size: .82rem;
+        color: var(--fg);
+        letter-spacing: .01em;
       }
+      .topbar .stats .sep { color: var(--border-strong); margin: 0 .4rem; }
+      .topbar .stats .label { color: var(--muted); }
+      .topbar .stats .cost { color: var(--accent); }
 
       /* App body */
       .app {
@@ -115,6 +119,36 @@
         background: var(--error-bg);
         color: var(--error-fg);
         font-size: .9rem;
+      }
+      /* Small per-message meta line below assistant replies. */
+      .msg-meta {
+        align-self: flex-start;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .7rem;
+        color: var(--muted);
+        padding: 0 .2rem;
+        margin: -.15rem 0 .3rem;
+      }
+      .msg-meta .cost { color: var(--accent); }
+      /* Small inline note under sampling sliders when the current model
+         locks them to defaults (e.g. gpt-5 reasoning-tuned variants). */
+      .locked-note {
+        display: none;
+        font-size: .72rem;
+        color: var(--muted);
+        background: var(--surface-2);
+        border: 1px dashed var(--border-strong);
+        border-radius: 6px;
+        padding: .4rem .55rem;
+        margin: .1rem 0 .9rem;
+      }
+      body[data-sampling-locked="true"] .locked-note { display: block; }
+      body[data-sampling-locked="true"] .field.sampling input[type="range"] {
+        opacity: .4;
+      }
+      body[data-sampling-locked="true"] .field.sampling .value {
+        color: var(--muted);
+        text-decoration: line-through;
       }
       /* Hero (empty-state landing) */
       .hero {
@@ -433,20 +467,24 @@
           <textarea id="system" spellcheck="false"></textarea>
         </div>
 
-        <div class="field">
+        <div class="field sampling">
           <div class="field-header">
-            <label for="temp">Temperature<button type="button" class="help-tip" data-help="How adventurous the model is. 0 = deterministic and repetitive; 1 = balanced; 2 = chaotic. Most tasks live around 0.7–0.9." aria-label="About temperature">?</button></label>
+            <label for="temp">Temperature<button type="button" class="help-tip" data-help="How flat the probability distribution is. Low = sticks to the most likely token (like 'car'); high = less probable tokens (like 'elephant') get a chance. 0.7–0.9 is the sweet spot." aria-label="About temperature">?</button></label>
             <span class="value" id="temp-value">0.8</span>
           </div>
           <input type="range" id="temp" min="0" max="2" step="0.1" value="0.8" />
         </div>
 
-        <div class="field">
+        <div class="field sampling">
           <div class="field-header">
-            <label for="topp">Top-p<button type="button" class="help-tip" data-help="Sampling cutoff. 1.0 considers every possible word; 0.1 keeps only the most likely ten per cent. Usually tune temperature or top-p, not both." aria-label="About top-p">?</button></label>
+            <label for="topp">Top-p<button type="button" class="help-tip" data-help="Size of the candidate pool, by cumulative probability. 1.0 = every token in play; 0.1 = only the few most likely. Tune temperature OR top-p, not both." aria-label="About top-p">?</button></label>
             <span class="value" id="topp-value">1.00</span>
           </div>
           <input type="range" id="topp" min="0.1" max="1" step="0.05" value="1" />
+        </div>
+
+        <div class="locked-note" id="sampling-locked-note">
+          This model locks temperature and top-p to the default (1.0). Pick an older model to experiment with sampling.
         </div>
 
         <div class="field">
@@ -473,15 +511,16 @@
         </svg>
       </button>
       <div class="spacer"></div>
-      <div class="stats" id="stats">0 msgs · 0 in · 0 out</div>
+      <div class="stats" id="stats" aria-live="polite">
+        <span class="label">msgs</span>&nbsp;<span id="stat-msgs">0</span><span class="sep">·</span><span class="label">in</span>&nbsp;<span id="stat-in">0</span><span class="sep">·</span><span class="label">out</span>&nbsp;<span id="stat-out">0</span><span class="sep">·</span><span class="cost" id="stat-cost">~$0.0000</span>
+      </div>
     </div>
 
     <div class="app">
       <main id="chat" class="chat">
         <div class="hero" id="placeholder">
-          <h1 class="hero-title">Dad Jokes</h1>
-          <p class="hero-tagline">A chatbot that only tells dad jokes.</p>
-          <p class="hero-hint">Say anything in the box below. The reply will be a dad joke about what you said.</p>
+          <h1 class="hero-title">Personal Assistant</h1>
+          <p class="hero-tagline">A chatbot you can shape into anything.</p>
           <p class="hero-cta">First time? <a id="open-settings-link">Open settings</a> to paste your OpenAI key.</p>
         </div>
       </main>
@@ -490,7 +529,7 @@
         <input
           id="input"
           type="text"
-          placeholder="Tell me about your day..."
+          placeholder="Ask anything..."
           autocomplete="off"
           required
         />
@@ -507,16 +546,36 @@
 
     <script>
       const DEFAULT_SYSTEM =
-        "You are a dad with dry British humour. Every reply is a relevant dad joke " +
-        "about what the user just said. Short, groan-worthy, deadpan. Emojis allowed — " +
-        "use them sparingly as punchlines, like a raised eyebrow, not confetti. " +
-        "Family friendly. British English.";
+        "You are a helpful personal assistant. Be concise, clear, and friendly. " +
+        "Ask a brief clarifying question when the request is ambiguous.";
       const DEFAULTS = {
         model: "gpt-5-mini",
         temperature: 0.8,
         top_p: 1.0,
         max_tokens: 1024,
       };
+      // Rough April-2026 USD per 1M tokens. Values are ballpark for teaching —
+      // check platform.openai.com/pricing for current rates before relying on them.
+      const PRICING = {
+        "gpt-5-mini":     { in: 0.25, out: 2.00 },
+        "gpt-4.1-mini":   { in: 0.40, out: 1.60 },
+        "gpt-4o-mini":    { in: 0.15, out: 0.60 },
+        "gpt-3.5-turbo":  { in: 0.50, out: 1.50 },
+      };
+      // gpt-5 reasoning-tuned variants only accept the default sampling params.
+      const SAMPLING_LOCKED = (model) => /^gpt-5(\b|[-.])/i.test(model);
+      function estimateCost(usage, model) {
+        const p = PRICING[model];
+        if (!p || !usage) return 0;
+        const inTok = usage.prompt_tokens || 0;
+        const outTok = (usage.total_tokens || 0) - inTok;
+        return (inTok * p.in + Math.max(0, outTok) * p.out) / 1_000_000;
+      }
+      function formatCost(cost) {
+        if (!cost) return "~$0.0000";
+        if (cost < 0.0001) return "<$0.0001";
+        return "~$" + cost.toFixed(4);
+      }
       const KEYS = {
         apiKey: "lmt-chatbot-openai-key",
         system: "lmt-chatbot-system-prompt",
@@ -548,7 +607,10 @@
       const form = document.getElementById("composer");
       const input = document.getElementById("input");
       const sendBtn = document.getElementById("send");
-      const statsEl = document.getElementById("stats");
+      const statMsgs = document.getElementById("stat-msgs");
+      const statIn = document.getElementById("stat-in");
+      const statOut = document.getElementById("stat-out");
+      const statCost = document.getElementById("stat-cost");
       const downloadBtn = document.getElementById("download");
       const clearBtn = document.getElementById("clear");
       const resetAllBtn = document.getElementById("reset-all");
@@ -556,6 +618,7 @@
       const history = [];
       let tokensIn = 0;
       let tokensOut = 0;
+      let costTotal = 0;
 
       // Hydrate controls from sessionStorage.
       keyInput.value = sessionStorage.getItem(KEYS.apiKey) || "";
@@ -587,6 +650,14 @@
         systemInput.value = DEFAULT_SYSTEM;
         sessionStorage.setItem(KEYS.system, DEFAULT_SYSTEM);
       });
+
+      // Lock sampling-slider UI when a sampling-locked model is selected.
+      function applySamplingLock() {
+        document.body.dataset.samplingLocked =
+          SAMPLING_LOCKED(modelSelect.value) ? "true" : "false";
+      }
+      modelSelect.addEventListener("change", applySamplingLock);
+      applySamplingLock();
 
       // Drawer open/close.
       function setMenu(open) {
@@ -636,7 +707,8 @@
           return;
         }
 
-        if (placeholder) placeholder.remove();
+        const placeholderEl = document.getElementById("placeholder");
+        if (placeholderEl) placeholderEl.remove();
         addMessage("user", text);
         history.push({
           role: "user",
@@ -649,27 +721,33 @@
         const loading = addMessage("assistant", "…");
 
         try {
+          const model = modelSelect.value;
           const { reply, usage } = await callOpenAI({
             apiKey: keyInput.value,
-            model: modelSelect.value,
+            model,
             systemPrompt: systemInput.value,
             messages: history,
             temperature: parseFloat(tempInput.value),
             top_p: parseFloat(toppInput.value),
             max_tokens: parseInt(maxtokInput.value, 10),
           });
-          loading.textContent = reply;
+          loading.bubble.textContent = reply;
           history.push({
             role: "assistant",
             content: reply,
             timestamp: new Date().toISOString(),
           });
           if (usage) {
-            tokensIn += usage.prompt_tokens || 0;
-            tokensOut += usage.completion_tokens || 0;
+            const inTok = usage.prompt_tokens || 0;
+            const outTok = (usage.total_tokens || 0) - inTok;
+            tokensIn += inTok;
+            tokensOut += Math.max(0, outTok);
+            const cost = estimateCost(usage, model);
+            costTotal += cost;
+            appendMeta(loading.wrap, inTok, outTok, cost);
           }
         } catch (err) {
-          loading.remove();
+          loading.wrap.remove();
           addMessage("error", err.message || String(err));
           history.pop();
         } finally {
@@ -690,6 +768,7 @@
             max_tokens: parseInt(maxtokInput.value, 10),
           },
           tokens: { prompt: tokensIn, completion: tokensOut },
+          estimated_cost_usd: Number(costTotal.toFixed(6)),
           messages: history,
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -710,6 +789,7 @@
         history.length = 0;
         tokensIn = 0;
         tokensOut = 0;
+        costTotal = 0;
         renderHero();
         refreshToolbar();
       });
@@ -717,9 +797,8 @@
       function renderHero() {
         chatEl.innerHTML = `
           <div class="hero" id="placeholder">
-            <h1 class="hero-title">Dad Jokes</h1>
-            <p class="hero-tagline">A chatbot that only tells dad jokes.</p>
-            <p class="hero-hint">Say anything in the box below. The reply will be a dad joke about what you said.</p>
+            <h1 class="hero-title">Personal Assistant</h1>
+            <p class="hero-tagline">A chatbot you can shape into anything.</p>
             <p class="hero-cta">First time? <a id="open-settings-link">Open settings</a> to paste your OpenAI key.</p>
           </div>
         `;
@@ -735,28 +814,32 @@
         toppInput.value = DEFAULTS.top_p;
         maxtokInput.value = DEFAULTS.max_tokens;
         renderSliderValues();
+        applySamplingLock();
         history.length = 0;
         tokensIn = 0;
         tokensOut = 0;
-        chatEl.innerHTML = "";
+        costTotal = 0;
+        renderHero();
         refreshToolbar();
         setMenu(true);
       });
 
       async function callOpenAI({ apiKey, model, systemPrompt, messages, temperature, top_p, max_tokens }) {
-        // Newer models (gpt-5, gpt-4.1, gpt-4o) want `max_completion_tokens`;
-        // legacy chat models (gpt-3.5-turbo) still want `max_tokens`. Send both
-        // and let the server pick whichever it accepts — OpenAI ignores unknown
-        // fields when the known one is present, and this sidesteps the split.
+        // Per-model quirks:
+        //  - gpt-3.5-turbo wants `max_tokens`; newer families want `max_completion_tokens`.
+        //  - gpt-5 reasoning-tuned variants reject non-default `temperature` and `top_p`,
+        //    so omit them entirely for those models.
         const payload = {
           model,
           messages: [
             { role: "system", content: systemPrompt },
             ...messages.map(({ role, content }) => ({ role, content })),
           ],
-          temperature,
-          top_p,
         };
+        if (!SAMPLING_LOCKED(model)) {
+          payload.temperature = temperature;
+          payload.top_p = top_p;
+        }
         if (model.startsWith("gpt-3.5")) {
           payload.max_tokens = max_tokens;
         } else {
@@ -783,20 +866,34 @@
       }
 
       function addMessage(role, text) {
-        const el = document.createElement("div");
-        el.className = `msg ${role}`;
-        el.textContent = text;
-        chatEl.appendChild(el);
-        el.scrollIntoView({ behavior: "smooth", block: "end" });
-        return el;
+        const wrap = document.createElement("div");
+        wrap.style.display = "contents";
+        const bubble = document.createElement("div");
+        bubble.className = `msg ${role}`;
+        bubble.textContent = text;
+        wrap.appendChild(bubble);
+        chatEl.appendChild(wrap);
+        bubble.scrollIntoView({ behavior: "smooth", block: "end" });
+        return { wrap, bubble };
+      }
+
+      function appendMeta(wrap, inTok, outTok, cost) {
+        const meta = document.createElement("div");
+        meta.className = "msg-meta";
+        meta.innerHTML =
+          `${inTok} in · ${Math.max(0, outTok)} out · ` +
+          `<span class="cost">${formatCost(cost)}</span>`;
+        wrap.appendChild(meta);
       }
 
       function refreshToolbar() {
         const hasHistory = history.length > 0;
         downloadBtn.disabled = !hasHistory;
         clearBtn.disabled = !hasHistory;
-        statsEl.textContent =
-          `${history.length} msg${history.length === 1 ? "" : "s"} · ${tokensIn} in · ${tokensOut} out`;
+        statMsgs.textContent = history.length;
+        statIn.textContent = tokensIn.toLocaleString();
+        statOut.textContent = tokensOut.toLocaleString();
+        statCost.textContent = formatCost(costTotal);
       }
 
       function renderSliderValues() {
