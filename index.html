@@ -1078,6 +1078,21 @@
           const model = modelSelect.value;
           const requestedAt = Date.now();
           const wantLogprobs = showLogprobsInput.checked;
+          // Stream tokens into the bubble as they arrive. Keep auto-scroll
+          // on while the user is still pinned to the bottom of the chat;
+          // if they scrolled up to read earlier messages, don't yank them
+          // back.
+          let firstToken = true;
+          const onDelta = (text) => {
+            const wasAtBottom =
+              chatEl.scrollTop + chatEl.clientHeight >= chatEl.scrollHeight - 24;
+            if (firstToken) {
+              loading.bubble.textContent = "";
+              firstToken = false;
+            }
+            loading.bubble.appendChild(document.createTextNode(text));
+            if (wasAtBottom) chatEl.scrollTop = chatEl.scrollHeight;
+          };
           const { reply, usage, finish_reason, model_snapshot, id, logprobs } =
             await callOpenAI({
               apiKey: keyInput.value,
@@ -1088,8 +1103,12 @@
               top_p: parseFloat(toppInput.value),
               max_tokens: parseInt(maxtokInput.value, 10),
               wantLogprobs,
+              onDelta,
             });
           const latencyMs = Date.now() - requestedAt;
+          // Final pass: once we have the full reply, swap the streamed
+          // plain-text in for either the token-chip view or a sanitised
+          // markdown render.
           if (logprobs && wantLogprobs) {
             loading.bubble.textContent = "";
             loading.bubble.appendChild(renderTokenChips(logprobs));
@@ -1235,7 +1254,7 @@
         setMenu(true);
       });
 
-      async function callOpenAI({ apiKey, model, systemPrompt, messages, temperature, top_p, max_tokens, wantLogprobs }) {
+      async function callOpenAI({ apiKey, model, systemPrompt, messages, temperature, top_p, max_tokens, wantLogprobs, onDelta }) {
         // Per-model quirks:
         //  - gpt-3.5-turbo wants `max_tokens`; newer families want `max_completion_tokens`.
         //  - gpt-5 reasoning-tuned variants reject non-default `temperature` and `top_p`,
@@ -1243,12 +1262,17 @@
         //  - logprobs is only supported on non-reasoning chat models. We gate
         //    it on the same SAMPLING_LOCKED predicate so reasoning models
         //    silently fall back to no-logprobs instead of 400-ing.
+        //  - We always stream so students see the autoregressive token-by-token
+        //    generation live. stream_options.include_usage makes the final
+        //    chunk carry a complete usage object.
         const payload = {
           model,
           messages: [
             { role: "system", content: systemPrompt },
             ...messages.map(({ role, content }) => ({ role, content })),
           ],
+          stream: true,
+          stream_options: { include_usage: true },
         };
         if (!SAMPLING_LOCKED(model)) {
           payload.temperature = temperature;
@@ -1272,18 +1296,60 @@
           },
           body: JSON.stringify(payload),
         });
-        const body = await response.json().catch(() => ({}));
         if (!response.ok) {
+          // Streaming errors are still returned as a single JSON error body.
+          const body = await response.json().catch(() => ({}));
           const msg = body?.error?.message ?? `HTTP ${response.status}`;
           throw new Error(msg);
         }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let replyText = "";
+        let usage = null;
+        let finishReason = null;
+        let modelSnapshot = null;
+        let id = null;
+        const logprobsContent = [];
+
+        streamLoop: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line.startsWith("data:")) continue;
+            const data = line.slice(5).trim();
+            if (data === "[DONE]") break streamLoop;
+            let chunk;
+            try { chunk = JSON.parse(data); } catch { continue; }
+            if (chunk.error) throw new Error(chunk.error.message || "Streaming error");
+            if (chunk.model) modelSnapshot = chunk.model;
+            if (chunk.id) id = chunk.id;
+            if (chunk.usage) usage = chunk.usage;
+            const choice = chunk.choices?.[0];
+            if (!choice) continue;
+            if (choice.finish_reason) finishReason = choice.finish_reason;
+            const delta = choice.delta?.content;
+            if (delta) {
+              replyText += delta;
+              if (onDelta) onDelta(delta);
+            }
+            const lpDelta = choice.logprobs?.content;
+            if (Array.isArray(lpDelta)) logprobsContent.push(...lpDelta);
+          }
+        }
+
         return {
-          reply: body.choices?.[0]?.message?.content ?? "",
-          usage: body.usage,
-          finish_reason: body.choices?.[0]?.finish_reason ?? null,
-          model_snapshot: body.model ?? null,
-          id: body.id ?? null,
-          logprobs: body.choices?.[0]?.logprobs?.content ?? null,
+          reply: replyText,
+          usage,
+          finish_reason: finishReason,
+          model_snapshot: modelSnapshot,
+          id,
+          logprobs: logprobsContent.length ? logprobsContent : null,
         };
       }
 
