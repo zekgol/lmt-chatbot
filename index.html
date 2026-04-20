@@ -226,6 +226,109 @@
         text-align: left;
       }
       .msg.assistant th { background: var(--surface-2); font-weight: 600; }
+
+      /* Token-probability mode. Each output token is a chip coloured by the
+         model's confidence (green = certain, red = uncertain). Clicking a
+         chip surfaces the top-5 alternatives at that position. */
+      .token-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .92em;
+        line-height: 1.65;
+      }
+      .token-chip {
+        padding: 0 2px;
+        border-radius: 3px;
+        cursor: pointer;
+        white-space: pre;
+        color: #f8fafc;
+      }
+      .token-chip:hover { outline: 1px solid var(--accent); outline-offset: 1px; }
+      .token-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+      .logprob-popover {
+        position: fixed;
+        z-index: 50;
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        padding: .7rem .85rem;
+        font-size: .82rem;
+        color: var(--fg);
+        min-width: 280px;
+        max-width: 380px;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, .55);
+      }
+      .popover-title {
+        font-weight: 600;
+        font-size: .84rem;
+        margin-bottom: .5rem;
+        color: var(--fg);
+        border-bottom: 1px solid var(--border-strong);
+        padding-bottom: .4rem;
+      }
+      .popover-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .popover-list li {
+        display: grid;
+        grid-template-columns: minmax(0, 8rem) 1fr auto;
+        align-items: center;
+        gap: .6rem;
+        padding: .22rem 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .76rem;
+      }
+      .popover-list li.chosen .alt-token { border: 1px solid var(--accent); }
+      .popover-list .alt-token {
+        background: var(--surface-2);
+        padding: 1px 5px;
+        border-radius: 3px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .popover-list .alt-bar-wrap {
+        background: var(--surface-2);
+        border-radius: 3px;
+        height: 8px;
+        overflow: hidden;
+      }
+      .popover-list .alt-bar {
+        height: 100%;
+        background: var(--accent);
+        min-width: 2px;
+      }
+      .popover-list .alt-prob {
+        text-align: right;
+        color: var(--muted);
+        min-width: 52px;
+      }
+
+      .field.checkbox-field {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        margin-bottom: 1.1rem;
+      }
+      .field.checkbox-field input[type="checkbox"] {
+        accent-color: var(--accent);
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+      }
+      .field.checkbox-field label {
+        font-size: .85rem;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--fg);
+        margin: 0;
+      }
       /* Small inline note under sampling sliders when the current model
          locks them to defaults (e.g. gpt-5 reasoning-tuned variants). */
       .locked-note {
@@ -638,6 +741,12 @@
           </div>
           <input type="range" id="maxtok" min="64" max="4096" step="64" value="1024" />
         </div>
+
+        <div class="field checkbox-field">
+          <input type="checkbox" id="show-logprobs" />
+          <label for="show-logprobs">Show token probabilities</label>
+          <button type="button" class="help-tip" data-help="Render each reply token as a coloured chip based on how confident the model was (green = certain, red = uncertain). Click a chip to see the top-5 alternatives. Not supported by reasoning models like gpt-5-nano." aria-label="About token probabilities">?</button>
+        </div>
       </div>
       <div class="drawer-footer">
         <button type="button" id="download" disabled>Download JSON</button>
@@ -786,6 +895,7 @@
         temperature: "lmt-chatbot-temperature",
         top_p: "lmt-chatbot-top-p",
         max_tokens: "lmt-chatbot-max-tokens",
+        show_logprobs: "lmt-chatbot-show-logprobs",
       };
 
       const drawer = document.getElementById("drawer");
@@ -804,6 +914,7 @@
       const maxtokValue = document.getElementById("maxtok-value");
       const resetSystemBtn = document.getElementById("reset-system");
       const presetSelect = document.getElementById("preset");
+      const showLogprobsInput = document.getElementById("show-logprobs");
 
       const chatEl = document.getElementById("chat");
       const placeholder = document.getElementById("placeholder");
@@ -834,6 +945,7 @@
       tempInput.value = sessionStorage.getItem(KEYS.temperature) ?? DEFAULTS.temperature;
       toppInput.value = sessionStorage.getItem(KEYS.top_p) ?? DEFAULTS.top_p;
       maxtokInput.value = sessionStorage.getItem(KEYS.max_tokens) ?? DEFAULTS.max_tokens;
+      showLogprobsInput.checked = sessionStorage.getItem(KEYS.show_logprobs) === "1";
       renderSliderValues();
 
       // Persist on input.
@@ -854,6 +966,9 @@
       maxtokInput.addEventListener("input", () => {
         sessionStorage.setItem(KEYS.max_tokens, maxtokInput.value);
         renderSliderValues();
+      });
+      showLogprobsInput.addEventListener("change", () => {
+        sessionStorage.setItem(KEYS.show_logprobs, showLogprobsInput.checked ? "1" : "0");
       });
 
       resetSystemBtn.addEventListener("click", () => {
@@ -962,7 +1077,8 @@
         try {
           const model = modelSelect.value;
           const requestedAt = Date.now();
-          const { reply, usage, finish_reason, model_snapshot, id } =
+          const wantLogprobs = showLogprobsInput.checked;
+          const { reply, usage, finish_reason, model_snapshot, id, logprobs } =
             await callOpenAI({
               apiKey: keyInput.value,
               model,
@@ -971,9 +1087,15 @@
               temperature: parseFloat(tempInput.value),
               top_p: parseFloat(toppInput.value),
               max_tokens: parseInt(maxtokInput.value, 10),
+              wantLogprobs,
             });
           const latencyMs = Date.now() - requestedAt;
-          loading.bubble.innerHTML = renderMarkdown(reply);
+          if (logprobs && wantLogprobs) {
+            loading.bubble.textContent = "";
+            loading.bubble.appendChild(renderTokenChips(logprobs));
+          } else {
+            loading.bubble.innerHTML = renderMarkdown(reply);
+          }
           const entry = {
             role: "assistant",
             content: reply,
@@ -983,6 +1105,7 @@
             usage,
             latency_ms: latencyMs,
             response_id: id,
+            logprobs,
           };
           entry[WRAP] = loading.wrap;
           history.push(entry);
@@ -1112,11 +1235,14 @@
         setMenu(true);
       });
 
-      async function callOpenAI({ apiKey, model, systemPrompt, messages, temperature, top_p, max_tokens }) {
+      async function callOpenAI({ apiKey, model, systemPrompt, messages, temperature, top_p, max_tokens, wantLogprobs }) {
         // Per-model quirks:
         //  - gpt-3.5-turbo wants `max_tokens`; newer families want `max_completion_tokens`.
         //  - gpt-5 reasoning-tuned variants reject non-default `temperature` and `top_p`,
         //    so omit them entirely for those models.
+        //  - logprobs is only supported on non-reasoning chat models. We gate
+        //    it on the same SAMPLING_LOCKED predicate so reasoning models
+        //    silently fall back to no-logprobs instead of 400-ing.
         const payload = {
           model,
           messages: [
@@ -1127,6 +1253,10 @@
         if (!SAMPLING_LOCKED(model)) {
           payload.temperature = temperature;
           payload.top_p = top_p;
+          if (wantLogprobs) {
+            payload.logprobs = true;
+            payload.top_logprobs = 5;
+          }
         }
         if (model.startsWith("gpt-3.5")) {
           payload.max_tokens = max_tokens;
@@ -1153,6 +1283,7 @@
           finish_reason: body.choices?.[0]?.finish_reason ?? null,
           model_snapshot: body.model ?? null,
           id: body.id ?? null,
+          logprobs: body.choices?.[0]?.logprobs?.content ?? null,
         };
       }
 
@@ -1166,6 +1297,91 @@
         chatEl.appendChild(wrap);
         bubble.scrollIntoView({ behavior: "smooth", block: "end" });
         return { wrap, bubble };
+      }
+
+      // Build the coloured token-chip view for a single assistant reply, from
+      // the `logprobs.content` array OpenAI returns when logprobs is enabled.
+      // Each chip's background is driven by the chosen token's logprob
+      // (green = confident, red = uncertain). Click a chip → popover showing
+      // the top-5 alternatives the model considered at that position.
+      function renderTokenChips(content) {
+        const container = document.createElement("span");
+        container.className = "token-chips";
+        for (const item of content) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "token-chip";
+          chip.textContent = item.token;
+          chip.style.background = logprobToColor(item.logprob);
+          const prob = Math.exp(item.logprob) * 100;
+          chip.title = `${prob.toFixed(2)}% — click for alternatives`;
+          chip.addEventListener("click", (event) => {
+            event.stopPropagation();
+            showLogprobPopover(chip, item);
+          });
+          container.appendChild(chip);
+        }
+        return container;
+      }
+
+      // Map a log-probability onto a hue from red (very unlikely) to green
+      // (near-certain). Anything below logprob -5 is effectively red.
+      function logprobToColor(lp) {
+        const clamped = Math.max(-5, Math.min(0, lp));
+        const hue = 120 * (1 + clamped / 5);
+        return `hsl(${hue.toFixed(0)}, 55%, 28%)`;
+      }
+
+      function showLogprobPopover(anchor, item) {
+        document.querySelectorAll(".logprob-popover").forEach((p) => p.remove());
+        const popover = document.createElement("div");
+        popover.className = "logprob-popover";
+
+        const title = document.createElement("div");
+        title.className = "popover-title";
+        const chosenProb = Math.exp(item.logprob) * 100;
+        title.textContent = `"${item.token}" — ${chosenProb.toFixed(2)}% chosen`;
+        popover.appendChild(title);
+
+        const list = document.createElement("ul");
+        list.className = "popover-list";
+        for (const alt of item.top_logprobs || []) {
+          const li = document.createElement("li");
+          if (alt.token === item.token) li.classList.add("chosen");
+          const prob = Math.exp(alt.logprob) * 100;
+          const tokenSpan = document.createElement("span");
+          tokenSpan.className = "alt-token";
+          tokenSpan.textContent = JSON.stringify(alt.token).slice(1, -1);
+          const barWrap = document.createElement("span");
+          barWrap.className = "alt-bar-wrap";
+          const bar = document.createElement("span");
+          bar.className = "alt-bar";
+          bar.style.width = `${Math.max(2, prob).toFixed(1)}%`;
+          barWrap.appendChild(bar);
+          const probSpan = document.createElement("span");
+          probSpan.className = "alt-prob";
+          probSpan.textContent = `${prob.toFixed(2)}%`;
+          li.append(tokenSpan, barWrap, probSpan);
+          list.appendChild(li);
+        }
+        popover.appendChild(list);
+
+        document.body.appendChild(popover);
+        // Position below the anchor, clamped to the viewport.
+        const rect = anchor.getBoundingClientRect();
+        const popRect = popover.getBoundingClientRect();
+        const maxLeft = window.innerWidth - popRect.width - 12;
+        const left = Math.min(Math.max(12, rect.left), maxLeft);
+        popover.style.left = `${left}px`;
+        popover.style.top = `${rect.bottom + 6}px`;
+
+        const dismiss = (event) => {
+          if (!popover.contains(event.target) && event.target !== anchor) {
+            popover.remove();
+            document.removeEventListener("click", dismiss);
+          }
+        };
+        setTimeout(() => document.addEventListener("click", dismiss), 0);
       }
 
       function appendActionChips(wrap, textForCopy) {
