@@ -1,6 +1,6 @@
 # Your personal LLM assistant
 
-A minimal OpenAI chatbot as a single HTML file, hosted on GitHub Pages. Fork it, make it yours, publish your own version at your own URL.
+A minimal LLM chatbot as a single HTML file, hosted on GitHub Pages. Fork it, make it yours, publish your own version at your own URL.
 
 ## 1. Try the live demo
 
