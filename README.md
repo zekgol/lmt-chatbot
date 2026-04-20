@@ -19,22 +19,12 @@ On your fork, go to **Settings → Pages**:
 
 Save. Wait 30–60 seconds. Your fork is live at `https://<your-username>.github.io/lmt-chatbot/`.
 
-## 4. Open the code
+## 4. Make it yours
+
+Open your fork in whichever environment suits you, edit `index.html`, commit, push. GitHub Pages rebuilds in about 30 seconds — refresh your URL to see the change.
 
 **a. In an agentic IDE.** Clone your fork and open it in [OpenAI Codex](https://openai.com/codex/) — free for a limited time (unlike Claude Code). Mac users get a native app; on Windows you can use the web app or install the plugin for VS Code / DataSpell.
 
 **b. In your IDE of choice with GitHub Copilot.** Clone your fork and open it in [JetBrains DataSpell](https://www.jetbrains.com/dataspell/) (recommended — free edu licence by linking your [GitHub Student account](https://education.github.com/pack)) or [VS Code](https://code.visualstudio.com/) (add the **Live Server** extension for instant reload). [GitHub Copilot](https://education.github.com/) is free for students and handles the boring edits.
 
 **c. Directly in VS Code in the browser.** On your fork's main page, press `.` (the period key). GitHub opens a full [VS Code in the browser](https://github.dev) at `github.dev/<your-username>/lmt-chatbot` — no install, no clone. Commit from the Source Control panel.
-
-## 5. Make it yours
-
-The interesting edits in `index.html`:
-
-- `DEFAULT_SYSTEM` — the system prompt. Rewrite this and the assistant becomes something else: a thesis coach, a Polish→English translator, a Socratic tutor.
-- `PRESETS` — add your own named starter prompts to the drawer dropdown.
-- `<h1>Personal Assistant</h1>` and the hero tagline below it.
-- The `:root` CSS variables at the top of the `<style>` block (colours, spacing).
-- The `<option>` list inside `<select id="model">` (swap models in and out).
-
-Commit, push, wait 30–60 seconds. Your changes are live at your URL.
