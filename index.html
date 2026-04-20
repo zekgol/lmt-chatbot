@@ -452,10 +452,10 @@
             <label for="model">Model<button type="button" class="help-tip" data-help="Newest first. Mini and turbo variants only — fast and free-tier friendly. If your key rejects the newest model, step down a generation." aria-label="About model choice">?</button></label>
           </div>
           <select id="model">
-            <option value="gpt-5-mini">gpt-5-mini (latest, 2026)</option>
-            <option value="gpt-4.1-mini">gpt-4.1-mini (2025)</option>
-            <option value="gpt-4o-mini">gpt-4o-mini (2024)</option>
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo (2023 baseline)</option>
+            <option value="gpt-5-mini">gpt-5-mini · 2026 · $0.25 in / $2.00 out · locked sampling</option>
+            <option value="gpt-4.1-mini">gpt-4.1-mini · 2025 · $0.40 in / $1.60 out</option>
+            <option value="gpt-4o-mini">gpt-4o-mini · 2024 · $0.15 in / $0.60 out</option>
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo · 2023 · $0.50 in / $1.50 out</option>
           </select>
         </div>
 
@@ -549,7 +549,7 @@
         "You are a helpful personal assistant. Be concise, clear, and friendly. " +
         "Ask a brief clarifying question when the request is ambiguous.";
       const DEFAULTS = {
-        model: "gpt-5-mini",
+        model: "gpt-4o-mini",
         temperature: 0.8,
         top_p: 1.0,
         max_tokens: 1024,
@@ -740,11 +740,13 @@
           if (usage) {
             const inTok = usage.prompt_tokens || 0;
             const outTok = (usage.total_tokens || 0) - inTok;
+            const reasoningTok =
+              usage.completion_tokens_details?.reasoning_tokens || 0;
             tokensIn += inTok;
             tokensOut += Math.max(0, outTok);
             const cost = estimateCost(usage, model);
             costTotal += cost;
-            appendMeta(loading.wrap, inTok, outTok, cost);
+            appendMeta(loading.wrap, inTok, outTok, reasoningTok, cost);
           }
         } catch (err) {
           loading.wrap.remove();
@@ -877,13 +879,19 @@
         return { wrap, bubble };
       }
 
-      function appendMeta(wrap, inTok, outTok, cost) {
+      function appendMeta(wrap, inTok, outTok, reasoningTok, cost) {
         const meta = document.createElement("div");
         meta.className = "msg-meta";
-        meta.title = "Tokens and cost for this single reply";
+        meta.title = reasoningTok
+          ? "Tokens and cost for this reply. 'reasoning' tokens are the model's hidden chain-of-thought, billed as output."
+          : "Tokens and cost for this single reply";
+        const out = Math.max(0, outTok).toLocaleString();
+        const outSegment = reasoningTok
+          ? `${out} tokens out (${reasoningTok.toLocaleString()} reasoning)`
+          : `${out} tokens out`;
         meta.innerHTML =
           `${inTok.toLocaleString()} tokens in · ` +
-          `${Math.max(0, outTok).toLocaleString()} tokens out · ` +
+          `${outSegment} · ` +
           `<span class="cost">${formatCost(cost)}</span>`;
         wrap.appendChild(meta);
       }
