@@ -8,6 +8,8 @@
       name="description"
       content="A minimal LLM chatbot as a single HTML file on GitHub Pages. Fork it and shape it into anything by editing the system prompt."
     />
+    <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -131,6 +133,99 @@
       }
       .msg-meta.user { align-self: flex-end; text-align: right; }
       .msg-meta .cost { color: var(--accent); }
+
+      /* Action chips (copy, regenerate) sit below the assistant meta line. */
+      .msg-actions {
+        align-self: flex-start;
+        display: flex;
+        gap: .35rem;
+        margin: -.15rem 0 .4rem;
+      }
+      .action-chip {
+        background: transparent;
+        border: 1px solid var(--border-strong);
+        color: var(--muted);
+        font-size: .7rem;
+        padding: .15rem .5rem;
+        border-radius: 5px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: color 120ms ease, background 120ms ease;
+      }
+      .action-chip:hover { color: var(--fg); background: var(--surface-2); }
+      .action-chip.copied { color: var(--accent); border-color: var(--accent); }
+
+      /* Markdown styling inside assistant bubbles. The bubble keeps its dark
+         card look; inner HTML is sanitised through DOMPurify before injection. */
+      .msg.assistant p { margin: 0 0 .5rem; }
+      .msg.assistant p:last-child { margin-bottom: 0; }
+      .msg.assistant h1,
+      .msg.assistant h2,
+      .msg.assistant h3,
+      .msg.assistant h4 {
+        margin: .6rem 0 .3rem;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+      .msg.assistant h1 { font-size: 1.15rem; }
+      .msg.assistant h2 { font-size: 1.08rem; }
+      .msg.assistant h3, .msg.assistant h4 { font-size: 1.02rem; }
+      .msg.assistant ul,
+      .msg.assistant ol {
+        margin: .3rem 0 .6rem;
+        padding-left: 1.3rem;
+      }
+      .msg.assistant li { margin: .15rem 0; }
+      .msg.assistant code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .88em;
+        background: var(--surface-2);
+        padding: .08rem .3rem;
+        border-radius: 4px;
+      }
+      .msg.assistant pre {
+        background: var(--surface-2);
+        padding: .65rem .8rem;
+        border-radius: 6px;
+        overflow-x: auto;
+        font-size: .85rem;
+        margin: .4rem 0;
+        border: 1px solid var(--border-strong);
+      }
+      .msg.assistant pre code {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+      }
+      .msg.assistant a {
+        color: var(--accent);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .msg.assistant strong { font-weight: 600; }
+      .msg.assistant em { font-style: italic; }
+      .msg.assistant blockquote {
+        margin: .3rem 0;
+        padding-left: .8rem;
+        border-left: 3px solid var(--border-strong);
+        color: var(--muted);
+      }
+      .msg.assistant hr {
+        border: 0;
+        border-top: 1px solid var(--border-strong);
+        margin: .6rem 0;
+      }
+      .msg.assistant table {
+        border-collapse: collapse;
+        margin: .4rem 0;
+        font-size: .88rem;
+      }
+      .msg.assistant th, .msg.assistant td {
+        border: 1px solid var(--border-strong);
+        padding: .3rem .5rem;
+        text-align: left;
+      }
+      .msg.assistant th { background: var(--surface-2); font-weight: 600; }
       /* Small inline note under sampling sliders when the current model
          locks them to defaults (e.g. gpt-5 reasoning-tuned variants). */
       .locked-note {
@@ -668,6 +763,22 @@
         if (cost < 0.0001) return "<$0.0001";
         return "~$" + cost.toFixed(4);
       }
+      function renderMarkdown(text) {
+        if (typeof marked === "undefined" || typeof DOMPurify === "undefined") {
+          return escapeHtml(text);
+        }
+        return DOMPurify.sanitize(
+          marked.parse(text, { gfm: true, breaks: true })
+        );
+      }
+      function escapeHtml(text) {
+        return text
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+      // Used to attach a wrap-element reference to each assistant history
+      // entry without showing up in JSON.stringify (for regenerate).
+      const WRAP = Symbol("wrap");
       const KEYS = {
         apiKey: "lmt-chatbot-openai-key",
         system: "lmt-chatbot-system-prompt",
@@ -834,6 +945,16 @@
           timestamp: new Date().toISOString(),
         });
         input.value = "";
+        await sendCompletion({ userBubble, isFirstTurn, newUserMessage: true });
+      });
+
+      // Shared flow for both fresh submissions and regenerations. When
+      // `newUserMessage` is true we're responding to the user's latest text,
+      // so the delta-based user-token meta is rendered and we revert the
+      // pushed user entry on error. On regeneration the user bubble already
+      // has its meta from the previous successful call; we just want a fresh
+      // assistant reply for the same history.
+      async function sendCompletion({ userBubble, isFirstTurn, newUserMessage }) {
         sendBtn.disabled = true;
         refreshToolbar();
         const loading = addMessage("assistant", "…");
@@ -852,8 +973,8 @@
               max_tokens: parseInt(maxtokInput.value, 10),
             });
           const latencyMs = Date.now() - requestedAt;
-          loading.bubble.textContent = reply;
-          history.push({
+          loading.bubble.innerHTML = renderMarkdown(reply);
+          const entry = {
             role: "assistant",
             content: reply,
             timestamp: new Date().toISOString(),
@@ -862,7 +983,9 @@
             usage,
             latency_ms: latencyMs,
             response_id: id,
-          });
+          };
+          entry[WRAP] = loading.wrap;
+          history.push(entry);
           if (usage) {
             const inTok = usage.prompt_tokens || 0;
             const outTok = (usage.total_tokens || 0) - inTok;
@@ -873,16 +996,20 @@
             const cost = estimateCost(usage, model);
             costTotal += cost;
 
-            // Back-compute this user turn's tokens from the prompt_tokens delta.
-            // First turn: the whole prompt_tokens is system + user, so we flag
-            // it as including the system prompt. Later turns: delta minus the
-            // prior assistant reply isolates this single user message.
-            const userTurnTokens = isFirstTurn
-              ? inTok
-              : Math.max(0, inTok - prevPromptTokens - prevCompletionTokens);
-            appendUserMeta(userBubble.wrap, userTurnTokens, isFirstTurn);
+            if (newUserMessage && userBubble) {
+              // Back-compute this user turn's tokens from the prompt_tokens
+              // delta. First turn: the whole prompt_tokens is system + user,
+              // so we flag it as including the system prompt. Later turns:
+              // delta minus the prior assistant reply isolates this single
+              // user message.
+              const userTurnTokens = isFirstTurn
+                ? inTok
+                : Math.max(0, inTok - prevPromptTokens - prevCompletionTokens);
+              appendUserMeta(userBubble.wrap, userTurnTokens, isFirstTurn);
+            }
 
             appendMeta(loading.wrap, inTok, outTok, reasoningTok, cost);
+            appendActionChips(loading.wrap, reply);
 
             prevPromptTokens = inTok;
             prevCompletionTokens = Math.max(0, outTok);
@@ -890,13 +1017,29 @@
         } catch (err) {
           loading.wrap.remove();
           addMessage("error", err.message || String(err));
-          history.pop();
+          if (newUserMessage) history.pop();
         } finally {
           sendBtn.disabled = false;
           refreshToolbar();
           input.focus();
         }
-      });
+      }
+
+      async function regenerate() {
+        if (!history.length) return;
+        const last = history[history.length - 1];
+        if (last.role !== "assistant") return;
+        // Remove the old reply from both history and DOM, then ask for a new
+        // one with the same prior context. Running totals keep accumulating —
+        // the old tokens were paid for, the new tokens add on top.
+        history.pop();
+        last[WRAP]?.remove();
+        await sendCompletion({
+          userBubble: null,
+          isFirstTurn: false,
+          newUserMessage: false,
+        });
+      }
 
       downloadBtn.addEventListener("click", () => {
         const payload = {
@@ -1023,6 +1166,38 @@
         chatEl.appendChild(wrap);
         bubble.scrollIntoView({ behavior: "smooth", block: "end" });
         return { wrap, bubble };
+      }
+
+      function appendActionChips(wrap, textForCopy) {
+        const row = document.createElement("div");
+        row.className = "msg-actions";
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "action-chip";
+        copyBtn.textContent = "Copy";
+        copyBtn.title = "Copy this reply to the clipboard";
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(textForCopy);
+            copyBtn.textContent = "Copied";
+            copyBtn.classList.add("copied");
+            setTimeout(() => {
+              copyBtn.textContent = "Copy";
+              copyBtn.classList.remove("copied");
+            }, 1200);
+          } catch {
+            copyBtn.textContent = "Copy failed";
+            setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+          }
+        });
+        const regenBtn = document.createElement("button");
+        regenBtn.type = "button";
+        regenBtn.className = "action-chip";
+        regenBtn.textContent = "Regenerate";
+        regenBtn.title = "Ask the model for a different reply to the same prompt";
+        regenBtn.addEventListener("click", () => regenerate());
+        row.append(copyBtn, regenBtn);
+        wrap.appendChild(row);
       }
 
       function appendUserMeta(wrap, tokens, isFirstTurn) {
