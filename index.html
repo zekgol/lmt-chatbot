@@ -543,12 +543,13 @@
       }
       .drawer-footer {
         display: flex;
-        gap: .5rem;
-        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .45rem;
         padding: .75rem 1.1rem;
         border-top: 1px solid var(--border);
         background: var(--surface);
       }
+      .drawer-footer button { flex: 1 1 auto; white-space: nowrap; }
 
       .field { margin-bottom: 1.1rem; }
       .field-header {
@@ -834,7 +835,8 @@ Preset use cases (temperature × top-p):
       </div>
       <div class="drawer-resize" id="drawer-resize" aria-label="Resize sidebar" role="separator" aria-orientation="vertical"></div>
       <div class="drawer-footer">
-        <button type="button" id="download" disabled>Download JSON</button>
+        <button type="button" id="download-simple" disabled title="Transcript only — role, content, model, system prompt">Simple JSON</button>
+        <button type="button" id="download-detailed" disabled title="Everything — per-turn usage, finish reasons, latency, logprobs">Detailed JSON</button>
         <button type="button" id="clear" disabled>Clear chat</button>
         <button type="button" id="reset-all" class="danger">Reset all</button>
       </div>
@@ -1024,7 +1026,8 @@ Preset use cases (temperature × top-p):
       const statIn = document.getElementById("stat-in");
       const statOut = document.getElementById("stat-out");
       const statCost = document.getElementById("stat-cost");
-      const downloadBtn = document.getElementById("download");
+      const downloadSimpleBtn = document.getElementById("download-simple");
+      const downloadDetailedBtn = document.getElementById("download-detailed");
       const clearBtn = document.getElementById("clear");
       const resetAllBtn = document.getElementById("reset-all");
 
@@ -1303,6 +1306,8 @@ Preset use cases (temperature × top-p):
             const outTok = (usage.total_tokens || 0) - inTok;
             const reasoningTok =
               usage.completion_tokens_details?.reasoning_tokens || 0;
+            const cachedTok =
+              usage.prompt_tokens_details?.cached_tokens || 0;
             tokensIn += inTok;
             tokensOut += Math.max(0, outTok);
             const cost = estimateCost(usage, model);
@@ -1320,7 +1325,7 @@ Preset use cases (temperature × top-p):
               appendUserMeta(userBubble.wrap, userTurnTokens, isFirstTurn);
             }
 
-            appendMeta(loading.wrap, inTok, outTok, reasoningTok, cost);
+            appendMeta(loading.wrap, inTok, outTok, reasoningTok, cachedTok, cost);
             appendActionChips(loading.wrap, reply);
 
             prevPromptTokens = inTok;
@@ -1359,31 +1364,52 @@ Preset use cases (temperature × top-p):
         });
       }
 
-      downloadBtn.addEventListener("click", () => {
-        const payload = {
+      // Two flavours of JSON export.
+      //   simple:   a human-readable transcript — model, system prompt, and
+      //             each turn as just { role, content }. Looks like a regular
+      //             OpenAI chat-completion messages payload.
+      //   detailed: everything the app has captured — per-turn usage (incl.
+      //             cached_tokens, reasoning_tokens), finish_reason, served
+      //             model snapshot, latency, response id, full logprobs.
+      function downloadJson(detailed) {
+        const basePayload = {
           exported_at: new Date().toISOString(),
           model: modelSelect.value,
           system_prompt: systemInput.value,
-          sampling: {
-            temperature: parseFloat(tempInput.value),
-            top_p: parseFloat(toppInput.value),
-            max_tokens: parseInt(maxtokInput.value, 10),
-          },
-          tokens: { prompt: tokensIn, completion: tokensOut },
-          estimated_cost_usd: Number(costTotal.toFixed(6)),
-          messages: history,
         };
+        let payload;
+        if (detailed) {
+          payload = {
+            ...basePayload,
+            sampling: {
+              temperature: parseFloat(tempInput.value),
+              top_p: parseFloat(toppInput.value),
+              max_tokens: parseInt(maxtokInput.value, 10),
+            },
+            tokens: { prompt: tokensIn, completion: tokensOut },
+            estimated_cost_usd: Number(costTotal.toFixed(6)),
+            messages: history,
+          };
+        } else {
+          payload = {
+            ...basePayload,
+            messages: history.map(({ role, content }) => ({ role, content })),
+          };
+        }
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-        a.download = `lmt-chatbot-${stamp}.json`;
+        const flavour = detailed ? "detailed" : "simple";
+        a.download = `lmt-chatbot-${flavour}-${stamp}.json`;
         document.body.appendChild(a);
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-      });
+      }
+      downloadSimpleBtn.addEventListener("click", () => downloadJson(false));
+      downloadDetailedBtn.addEventListener("click", () => downloadJson(true));
 
       clearBtn.addEventListener("click", () => {
         if (!history.length) return;
@@ -1686,26 +1712,32 @@ Preset use cases (temperature × top-p):
         wrap.appendChild(meta);
       }
 
-      function appendMeta(wrap, inTok, outTok, reasoningTok, cost) {
+      function appendMeta(wrap, inTok, outTok, reasoningTok, cachedTok, cost) {
         const meta = document.createElement("div");
         meta.className = "msg-meta";
-        meta.title = reasoningTok
-          ? "Tokens and cost for this reply. 'reasoning' tokens are the model's hidden chain-of-thought, billed as output."
+        const bits = [];
+        if (reasoningTok) bits.push("'reasoning' tokens are the model's hidden chain-of-thought, billed as output");
+        if (cachedTok) bits.push("'cached' tokens are prompt tokens that hit OpenAI's automatic prompt cache, billed at a 50% discount");
+        meta.title = bits.length
+          ? `Tokens and cost for this reply. ${bits.join(". ")}.`
           : "Tokens and cost for this single reply";
         const out = Math.max(0, outTok).toLocaleString();
+        const inSegment = cachedTok
+          ? `${inTok.toLocaleString()} tokens in (${cachedTok.toLocaleString()} cached)`
+          : `${inTok.toLocaleString()} tokens in`;
         const outSegment = reasoningTok
           ? `${out} tokens out (${reasoningTok.toLocaleString()} reasoning)`
           : `${out} tokens out`;
         meta.innerHTML =
-          `${inTok.toLocaleString()} tokens in · ` +
-          `${outSegment} · ` +
+          `${inSegment} · ${outSegment} · ` +
           `<span class="cost">${formatCost(cost)}</span>`;
         wrap.appendChild(meta);
       }
 
       function refreshToolbar() {
         const hasHistory = history.length > 0;
-        downloadBtn.disabled = !hasHistory;
+        downloadSimpleBtn.disabled = !hasHistory;
+        downloadDetailedBtn.disabled = !hasHistory;
         clearBtn.disabled = !hasHistory;
         statMsgs.textContent = history.length;
         statIn.textContent = tokensIn.toLocaleString();
