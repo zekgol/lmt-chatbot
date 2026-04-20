@@ -511,8 +511,8 @@
         </svg>
       </button>
       <div class="spacer"></div>
-      <div class="stats" id="stats" aria-live="polite">
-        <span class="label">msgs</span>&nbsp;<span id="stat-msgs">0</span><span class="sep">·</span><span class="label">in</span>&nbsp;<span id="stat-in">0</span><span class="sep">·</span><span class="label">out</span>&nbsp;<span id="stat-out">0</span><span class="sep">·</span><span class="cost" id="stat-cost">~$0.0000</span>
+      <div class="stats" id="stats" aria-live="polite" title="Running totals for this conversation">
+        <span id="stat-msgs">0</span>&nbsp;<span class="label">msgs</span><span class="sep">·</span><span id="stat-in">0</span>&nbsp;<span class="label">tokens in</span><span class="sep">·</span><span id="stat-out">0</span>&nbsp;<span class="label">tokens out</span><span class="sep">·</span><span class="cost" id="stat-cost">~$0.0000</span>&nbsp;<span class="label">total</span>
       </div>
     </div>
 
@@ -880,8 +880,10 @@
       function appendMeta(wrap, inTok, outTok, cost) {
         const meta = document.createElement("div");
         meta.className = "msg-meta";
+        meta.title = "Tokens and cost for this single reply";
         meta.innerHTML =
-          `${inTok} in · ${Math.max(0, outTok)} out · ` +
+          `${inTok.toLocaleString()} tokens in · ` +
+          `${Math.max(0, outTok).toLocaleString()} tokens out · ` +
           `<span class="cost">${formatCost(cost)}</span>`;
         wrap.appendChild(meta);
       }
