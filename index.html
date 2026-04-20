@@ -354,6 +354,26 @@
       }
       .mini-btn:hover { color: var(--fg); background: var(--surface); }
 
+      .field-actions { display: flex; gap: .3rem; align-items: center; }
+      .mini-select {
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        padding: .18rem .4rem;
+        font-size: .7rem;
+        color: var(--muted);
+        cursor: pointer;
+        font-family: inherit;
+        max-width: 140px;
+      }
+      .mini-select:hover { color: var(--fg); background: var(--surface); }
+      .field-note {
+        font-size: .7rem;
+        color: var(--muted);
+        margin: -.2rem 0 .5rem;
+        font-style: italic;
+      }
+
       /* Help tooltip: small "?" next to a label, tooltip content in data-help.
          Hover or focus or tap (toggles .open) reveals it. */
       .help-tip {
@@ -462,8 +482,19 @@
         <div class="field">
           <div class="field-header">
             <label for="system">System prompt<button type="button" class="help-tip" data-help="The invisible first message that steers every reply. Change this and the bot becomes a different bot." aria-label="About the system prompt">?</button></label>
-            <button type="button" class="mini-btn" id="reset-system">Reset</button>
+            <div class="field-actions">
+              <select id="preset" class="mini-select" aria-label="Preset prompts">
+                <option value="">Preset…</option>
+                <option value="personal-assistant">Personal assistant</option>
+                <option value="dad-jokes">Dad jokes</option>
+                <option value="chatgpt">ChatGPT-style</option>
+                <option value="claude">Claude-style</option>
+                <option value="grok">Grok-style</option>
+              </select>
+              <button type="button" class="mini-btn" id="reset-system">Reset</button>
+            </div>
           </div>
+          <p class="field-note">Branded presets are caricatures of each product's public vibe, not their real system prompts (which aren't public).</p>
           <textarea id="system" spellcheck="false"></textarea>
         </div>
 
@@ -548,6 +579,50 @@
       const DEFAULT_SYSTEM =
         "You are a helpful personal assistant. Be concise, clear, and friendly. " +
         "Ask a brief clarifying question when the request is ambiguous.";
+
+      // Caricatures of each product's public vibe, not their real system prompts
+      // (which aren't published). 'personal-assistant' == DEFAULT_SYSTEM so the
+      // Reset button and this preset agree.
+      const PRESETS = {
+        "personal-assistant": {
+          label: "Personal assistant",
+          prompt: DEFAULT_SYSTEM,
+        },
+        "dad-jokes": {
+          label: "Dad jokes",
+          prompt:
+            "You are a dad with dry British humour. Every reply is a relevant dad joke " +
+            "about what the user just said. Short, groan-worthy, deadpan. Emojis allowed — " +
+            "use them sparingly as punchlines, like a raised eyebrow, not confetti. " +
+            "Family friendly. British English.",
+        },
+        "chatgpt": {
+          label: "ChatGPT-style",
+          prompt:
+            "You are ChatGPT, a large language model trained by OpenAI. Answer helpfully " +
+            "and concisely. Use markdown formatting (headings, bullet lists, code fences) " +
+            "when it improves clarity. If asked about your knowledge cutoff, say it is " +
+            "early 2024 unless you know otherwise. Hedge politely on sensitive or " +
+            "uncertain topics, and decline requests that violate OpenAI's usage policies.",
+        },
+        "claude": {
+          label: "Claude-style",
+          prompt:
+            "You are Claude, an AI assistant made by Anthropic. You are helpful, harmless, " +
+            "and honest. Be thoughtful and substantive — don't rush to a shallow answer " +
+            "when the question deserves reflection. Prefer clear prose over bullet lists " +
+            "unless structure genuinely helps. Be willing to respectfully push back when " +
+            "you disagree. Acknowledge uncertainty rather than inventing facts.",
+        },
+        "grok": {
+          label: "Grok-style",
+          prompt:
+            "You are Grok, an AI inspired by the Hitchhiker's Guide to the Galaxy. You " +
+            "have a rebellious streak and a dry sense of humour. Answer directly, skip " +
+            "the corporate hedging, and don't be afraid of unconventional or edgy takes. " +
+            "Be accurate first, witty second — wit without substance is just noise.",
+        },
+      };
       const DEFAULTS = {
         model: "gpt-4o-mini",
         temperature: 0.8,
@@ -601,6 +676,7 @@
       const toppValue = document.getElementById("topp-value");
       const maxtokValue = document.getElementById("maxtok-value");
       const resetSystemBtn = document.getElementById("reset-system");
+      const presetSelect = document.getElementById("preset");
 
       const chatEl = document.getElementById("chat");
       const placeholder = document.getElementById("placeholder");
@@ -631,7 +707,10 @@
 
       // Persist on input.
       keyInput.addEventListener("input", () => setOrClear(KEYS.apiKey, keyInput.value));
-      systemInput.addEventListener("input", () => setOrClear(KEYS.system, systemInput.value));
+      systemInput.addEventListener("input", () => {
+        setOrClear(KEYS.system, systemInput.value);
+        syncPresetIndicator();
+      });
       modelSelect.addEventListener("change", () => setOrClear(KEYS.model, modelSelect.value));
       tempInput.addEventListener("input", () => {
         sessionStorage.setItem(KEYS.temperature, tempInput.value);
@@ -649,7 +728,30 @@
       resetSystemBtn.addEventListener("click", () => {
         systemInput.value = DEFAULT_SYSTEM;
         sessionStorage.setItem(KEYS.system, DEFAULT_SYSTEM);
+        syncPresetIndicator();
       });
+
+      // Apply a preset when the user picks one. Editing the textarea afterwards
+      // clears the indicator back to "Preset…" via syncPresetIndicator().
+      presetSelect.addEventListener("change", () => {
+        const key = presetSelect.value;
+        if (!key) return;
+        const preset = PRESETS[key];
+        if (!preset) return;
+        systemInput.value = preset.prompt;
+        sessionStorage.setItem(KEYS.system, preset.prompt);
+      });
+
+      function findPresetKey(prompt) {
+        for (const [k, v] of Object.entries(PRESETS)) {
+          if (v.prompt === prompt) return k;
+        }
+        return "";
+      }
+      function syncPresetIndicator() {
+        presetSelect.value = findPresetKey(systemInput.value);
+      }
+      syncPresetIndicator();
 
       // Lock sampling-slider UI when a sampling-locked model is selected.
       function applySamplingLock() {
@@ -817,6 +919,7 @@
         maxtokInput.value = DEFAULTS.max_tokens;
         renderSliderValues();
         applySamplingLock();
+        syncPresetIndicator();
         history.length = 0;
         tokensIn = 0;
         tokensOut = 0;
