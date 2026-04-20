@@ -862,7 +862,7 @@ Preset use cases (temperature × top-p):
       </button>
       <div class="spacer"></div>
       <div class="stats" id="stats" aria-live="polite" title="Running totals for this conversation">
-        <span id="stat-msgs">0</span>&nbsp;<span class="label">msgs</span><span class="sep">·</span><span id="stat-in">0</span>&nbsp;<span class="label">tokens in</span><span class="sep">·</span><span id="stat-out">0</span>&nbsp;<span class="label">tokens out</span><span class="sep">·</span><span class="cost" id="stat-cost">~$0.0000</span>&nbsp;<span class="label">total</span>
+        <span id="stat-msgs">0</span>&nbsp;<span class="label">msgs</span><span class="sep">·</span><span id="stat-in">0</span>&nbsp;<span class="label">tokens in</span><span class="sep" id="stat-cached-sep" hidden>·</span><span class="cached" id="stat-cached" hidden>0 cached</span><span class="sep">·</span><span id="stat-out">0</span>&nbsp;<span class="label">tokens out</span><span class="sep">·</span><span class="cost" id="stat-cost">~$0.0000</span>&nbsp;<span class="label">total</span>
       </div>
     </div>
 
@@ -972,8 +972,14 @@ Preset use cases (temperature × top-p):
         const p = PRICING[model];
         if (!p || !usage) return 0;
         const inTok = usage.prompt_tokens || 0;
+        const cachedTok = usage.prompt_tokens_details?.cached_tokens || 0;
+        const uncachedIn = Math.max(0, inTok - cachedTok);
         const outTok = (usage.total_tokens || 0) - inTok;
-        return (inTok * p.in + Math.max(0, outTok) * p.out) / 1_000_000;
+        // Cached input tokens are billed at a 50% discount on the input rate.
+        return (
+          (uncachedIn * p.in + cachedTok * p.in * 0.5 + Math.max(0, outTok) * p.out)
+          / 1_000_000
+        );
       }
       function formatCost(cost) {
         if (!cost) return "~$0.0000";
@@ -1036,6 +1042,8 @@ Preset use cases (temperature × top-p):
       const statIn = document.getElementById("stat-in");
       const statOut = document.getElementById("stat-out");
       const statCost = document.getElementById("stat-cost");
+      const statCached = document.getElementById("stat-cached");
+      const statCachedSep = document.getElementById("stat-cached-sep");
       const downloadSimpleBtn = document.getElementById("download-simple");
       const downloadDetailedBtn = document.getElementById("download-detailed");
       const clearBtn = document.getElementById("clear");
@@ -1044,6 +1052,7 @@ Preset use cases (temperature × top-p):
       const history = [];
       let tokensIn = 0;
       let tokensOut = 0;
+      let tokensCached = 0;
       let costTotal = 0;
       // Used to back-compute the token cost of each new user message from the
       // delta in usage.prompt_tokens between successive API responses.
@@ -1320,6 +1329,7 @@ Preset use cases (temperature × top-p):
               usage.prompt_tokens_details?.cached_tokens || 0;
             tokensIn += inTok;
             tokensOut += Math.max(0, outTok);
+            tokensCached += cachedTok;
             const cost = estimateCost(usage, model);
             costTotal += cost;
 
@@ -1427,6 +1437,7 @@ Preset use cases (temperature × top-p):
         history.length = 0;
         tokensIn = 0;
         tokensOut = 0;
+        tokensCached = 0;
         costTotal = 0;
         prevPromptTokens = 0;
         prevCompletionTokens = 0;
@@ -1461,6 +1472,7 @@ Preset use cases (temperature × top-p):
         history.length = 0;
         tokensIn = 0;
         tokensOut = 0;
+        tokensCached = 0;
         costTotal = 0;
         prevPromptTokens = 0;
         prevCompletionTokens = 0;
@@ -1753,6 +1765,15 @@ Preset use cases (temperature × top-p):
         statIn.textContent = tokensIn.toLocaleString();
         statOut.textContent = tokensOut.toLocaleString();
         statCost.textContent = formatCost(costTotal);
+        // Only surface the cached pill once caching has actually fired.
+        if (tokensCached > 0) {
+          statCached.textContent = `${tokensCached.toLocaleString()} cached`;
+          statCached.hidden = false;
+          statCachedSep.hidden = false;
+        } else {
+          statCached.hidden = true;
+          statCachedSep.hidden = true;
+        }
       }
 
       function renderSliderValues() {
