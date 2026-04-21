@@ -790,7 +790,7 @@
           <button type="button" class="help-tip wide" data-help="Temperature and top-p both control how random the reply is, but in different ways. Best practice: change one at a time so you can tell which knob caused a shift.
 
 Preset use cases (temperature · top-p):
-• 0.0 · 1.0 — Reproducible: same reply for every student (uses a fixed seed)
+• 0.0 · 1.0 — Reproducible: same reply for everyone (uses a fixed seed)
 • 0.2 · 0.2 — Email / deterministic: predictable, focused
 • 0.2 · 1.0 — Translation: faithful, varied vocabulary
 • 1.3 · 0.5 — Creative writing: novel but coherent
@@ -800,7 +800,7 @@ Preset use cases (temperature · top-p):
 
         <select id="sampling-preset" class="preset-select" aria-label="Sampling presets">
           <option value="">Preset use case…</option>
-          <option value="reproducible">temp 0.0 · top-p 1.0 · Reproducible — same output every student</option>
+          <option value="reproducible">temp 0.0 · top-p 1.0 · Reproducible — same output for everyone</option>
           <option value="deterministic">temp 0.2 · top-p 0.2 · Email — predictable, focused</option>
           <option value="translation">temp 0.2 · top-p 1.0 · Translation — faithful, varied vocab</option>
           <option value="creative">temp 1.3 · top-p 0.5 · Creative writing — novel but coherent</option>
