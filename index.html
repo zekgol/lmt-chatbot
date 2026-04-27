@@ -3,44 +3,104 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Your personal LLM assistant</title>
+    <title>FRIDAY Core Interface</title>
     <meta
       name="description"
-      content="A minimal LLM chatbot as a single HTML file on GitHub Pages. Fork it and shape it into anything by editing the system prompt."
+      content="A cinematic single-file AI console with a lightweight Jarvis-inspired interface."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Orbitron:wght@500;700;800&display=swap"
+      rel="stylesheet"
     />
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0b1120;
-        --surface: #111827;
-        --surface-2: #1f2937;
-        --fg: #f8fafc;
-        --muted: #94a3b8;
-        --border: #1f2937;
-        --border-strong: #334155;
-        --accent: #60a5fa;
-        --accent-strong: #3b82f6;
-        --bubble-user: #1e3a8a;
-        --bubble-user-fg: #dbeafe;
-        --bubble-assistant: #111827;
-        --error-bg: #450a0a;
-        --error-fg: #fecaca;
+        --bg: #040b12;
+        --surface: rgba(6, 19, 31, 0.74);
+        --surface-2: rgba(10, 30, 46, 0.82);
+        --surface-3: rgba(13, 41, 59, 0.94);
+        --fg: #e6f7ff;
+        --muted: #79a8bf;
+        --border: rgba(54, 148, 182, 0.22);
+        --border-strong: rgba(110, 220, 255, 0.48);
+        --accent: #6ae6ff;
+        --accent-strong: #0fb4d8;
+        --accent-soft: rgba(106, 230, 255, 0.16);
+        --warning: #ffd166;
+        --bubble-user: linear-gradient(135deg, rgba(11, 102, 128, 0.78), rgba(8, 54, 76, 0.92));
+        --bubble-user-fg: #effcff;
+        --bubble-assistant: linear-gradient(180deg, rgba(6, 21, 34, 0.92), rgba(5, 15, 24, 0.98));
+        --error-bg: rgba(95, 18, 28, 0.92);
+        --error-fg: #ffd6dd;
+        --shadow: 0 0 0 1px rgba(106, 230, 255, 0.08), 0 20px 60px rgba(0, 0, 0, 0.45);
       }
       * { box-sizing: border-box; }
       html, body { height: 100%; }
       body {
         margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
-          system-ui, sans-serif;
+        font-family: "Chakra Petch", "Segoe UI", sans-serif;
         background: var(--bg);
         color: var(--fg);
         line-height: 1.5;
+        overflow-x: hidden;
+        background-image:
+          radial-gradient(circle at 20% 20%, rgba(18, 120, 156, 0.2), transparent 28%),
+          radial-gradient(circle at 80% 18%, rgba(0, 214, 255, 0.12), transparent 22%),
+          radial-gradient(circle at 50% 100%, rgba(27, 85, 120, 0.18), transparent 38%),
+          linear-gradient(180deg, #07131e 0%, #03090f 54%, #02070c 100%);
+      }
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      body::before {
+        background:
+          linear-gradient(rgba(106, 230, 255, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(106, 230, 255, 0.05) 1px, transparent 1px);
+        background-size: 90px 90px;
+        mask-image: radial-gradient(circle at center, black 24%, transparent 82%);
+        opacity: 0.32;
+      }
+      body::after {
+        background: linear-gradient(
+          180deg,
+          transparent 0%,
+          rgba(106, 230, 255, 0.04) 45%,
+          transparent 100%
+        );
+        animation: scanline 10s linear infinite;
       }
       body[data-menu="open"] { overflow: hidden; }
 
       button { font: inherit; cursor: pointer; }
+      ::selection {
+        background: rgba(106, 230, 255, 0.22);
+        color: var(--fg);
+      }
+
+      @keyframes scanline {
+        from { transform: translateY(-100%); }
+        to { transform: translateY(100%); }
+      }
+      @keyframes pulseGlow {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(106, 230, 255, 0.18), 0 0 18px rgba(0, 193, 255, 0.1); }
+        50% { box-shadow: 0 0 0 1px rgba(106, 230, 255, 0.36), 0 0 30px rgba(0, 193, 255, 0.22); }
+      }
+      @keyframes ringSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes floatHud {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-8px); }
+      }
 
       /* Top bar */
       .topbar {
@@ -50,33 +110,54 @@
         display: flex;
         align-items: center;
         gap: .75rem;
-        padding: .75rem 1rem;
-        background: var(--bg);
+        padding: .9rem 1.1rem;
+        background: rgba(3, 9, 15, 0.76);
         border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(18px);
       }
       .menu-toggle {
-        background: transparent;
+        background: rgba(7, 26, 40, 0.75);
         border: 1px solid var(--border-strong);
         border-radius: 8px;
         color: var(--fg);
-        width: 38px;
-        height: 38px;
+        width: 42px;
+        height: 42px;
         display: grid;
         place-items: center;
+        box-shadow: inset 0 0 0 1px rgba(106, 230, 255, 0.08);
       }
-      .menu-toggle:hover { background: var(--surface); }
+      .menu-toggle:hover { background: rgba(11, 37, 56, 0.9); }
       .menu-toggle svg { width: 18px; height: 18px; }
+      .topbar-brand {
+        display: flex;
+        flex-direction: column;
+        gap: .08rem;
+      }
       .topbar h1 {
         margin: 0;
-        font-size: 1rem;
-        font-weight: 600;
+        font-family: "Orbitron", sans-serif;
+        font-size: .92rem;
+        font-weight: 700;
+        letter-spacing: .28em;
+        text-transform: uppercase;
+      }
+      .topbar-subtitle {
+        color: var(--muted);
+        font-size: .68rem;
+        letter-spacing: .22em;
+        text-transform: uppercase;
       }
       .topbar .spacer { flex: 1; }
       .topbar .stats {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: .82rem;
+        font-family: "Orbitron", ui-monospace, monospace;
+        font-size: .75rem;
         color: var(--fg);
-        letter-spacing: .01em;
+        letter-spacing: .08em;
+        background: rgba(7, 23, 37, 0.8);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: .55rem .8rem;
+        box-shadow: inset 0 0 0 1px rgba(106, 230, 255, 0.05);
       }
       .topbar .stats .sep { color: var(--border-strong); margin: 0 .4rem; }
       .topbar .stats .label { color: var(--muted); }
@@ -90,6 +171,7 @@
         display: flex;
         flex-direction: column;
         padding: 1rem;
+        position: relative;
       }
       main.chat {
         flex: 1;
@@ -97,24 +179,48 @@
         flex-direction: column;
         gap: .5rem;
         overflow-y: auto;
-        padding: .25rem 0;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background:
+          radial-gradient(circle at top, rgba(106, 230, 255, 0.06), transparent 40%),
+          linear-gradient(180deg, rgba(5, 18, 29, 0.75), rgba(3, 11, 18, 0.92));
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
       }
       .msg {
         max-width: 80%;
-        padding: .6rem .85rem;
-        border-radius: 12px;
+        padding: .8rem .95rem;
+        border-radius: 18px;
         white-space: pre-wrap;
         word-wrap: break-word;
+        box-shadow: var(--shadow);
       }
       .msg.user {
         align-self: flex-end;
         background: var(--bubble-user);
         color: var(--bubble-user-fg);
+        border: 1px solid rgba(125, 245, 255, 0.24);
       }
       .msg.assistant {
         align-self: flex-start;
         background: var(--bubble-assistant);
         border: 1px solid var(--border-strong);
+        position: relative;
+      }
+      .msg.assistant::before {
+        content: "AI";
+        position: absolute;
+        top: -10px;
+        left: 14px;
+        padding: 0 .45rem;
+        border-radius: 999px;
+        background: rgba(4, 15, 24, 0.95);
+        border: 1px solid var(--border);
+        color: var(--accent);
+        font-family: "Orbitron", sans-serif;
+        font-size: .6rem;
+        letter-spacing: .18em;
       }
       .msg.error {
         align-self: stretch;
@@ -373,23 +479,95 @@
         justify-content: center;
         align-items: center;
         text-align: center;
-        gap: .5rem;
+        gap: .8rem;
         padding: 2rem 1rem;
-        /* Pull up a little from perfect centre; looks more settled. */
-        transform: translateY(-6%);
+        transform: translateY(-3%);
+        position: relative;
+      }
+      .hero-core {
+        width: min(48vw, 260px);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        position: relative;
+        display: grid;
+        place-items: center;
+        margin-bottom: .8rem;
+        animation: floatHud 6s ease-in-out infinite;
+      }
+      .hero-core::before,
+      .hero-core::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+      }
+      .hero-core::before {
+        border: 1px solid rgba(106, 230, 255, 0.42);
+        box-shadow: 0 0 40px rgba(25, 178, 211, 0.18), inset 0 0 30px rgba(106, 230, 255, 0.08);
+      }
+      .hero-core::after {
+        inset: 12%;
+        border: 1px dashed rgba(106, 230, 255, 0.45);
+        animation: ringSpin 14s linear infinite;
+      }
+      .hero-orbit,
+      .hero-orbit::before,
+      .hero-orbit::after {
+        position: absolute;
+        border-radius: 50%;
+        border: 1px solid rgba(106, 230, 255, 0.18);
+      }
+      .hero-orbit {
+        inset: -8%;
+        animation: ringSpin 18s linear infinite reverse;
+      }
+      .hero-orbit::before,
+      .hero-orbit::after {
+        content: "";
+        inset: 10%;
+      }
+      .hero-orbit::after {
+        inset: 23%;
+        border-style: dashed;
+      }
+      .hero-core-center {
+        width: 34%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(132, 244, 255, 0.95) 0%, rgba(20, 168, 201, 0.48) 42%, rgba(0, 0, 0, 0) 72%);
+        box-shadow: 0 0 28px rgba(106, 230, 255, 0.5);
+        animation: pulseGlow 2.6s ease-in-out infinite;
+      }
+      .hero-label {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .28rem .7rem;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(6, 22, 34, 0.78);
+        color: var(--accent);
+        font-family: "Orbitron", sans-serif;
+        font-size: .72rem;
+        letter-spacing: .18em;
+        text-transform: uppercase;
       }
       .hero-title {
-        font-size: clamp(2.25rem, 5vw, 3rem);
-        font-weight: 700;
-        letter-spacing: -0.02em;
+        font-family: "Orbitron", sans-serif;
+        font-size: clamp(2.3rem, 5vw, 4rem);
+        font-weight: 800;
+        letter-spacing: .12em;
         margin: 0;
-        color: var(--fg);
+        color: #f1fdff;
+        text-transform: uppercase;
+        text-shadow: 0 0 24px rgba(106, 230, 255, 0.22);
       }
       .hero-tagline {
         margin: .25rem 0 0;
         font-size: 1rem;
         color: var(--fg);
-        opacity: .75;
+        opacity: .82;
+        max-width: 34rem;
       }
       .hero-hint {
         margin: 1rem 0 0;
@@ -414,27 +592,33 @@
       form.composer {
         display: flex;
         gap: .5rem;
-        padding: .75rem 0 .25rem;
+        padding: .85rem 0 .25rem;
+        align-items: stretch;
       }
       form.composer input {
         flex: 1;
-        padding: .6rem .8rem;
+        padding: .95rem 1rem;
         border: 1px solid var(--border-strong);
-        border-radius: 10px;
-        background: var(--surface);
+        border-radius: 16px;
+        background: rgba(5, 18, 29, 0.88);
         color: var(--fg);
         font: inherit;
+        box-shadow: var(--shadow);
       }
       form.composer input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
       form.composer button {
-        padding: .6rem 1.1rem;
+        padding: .6rem 1.2rem;
         border: 0;
-        border-radius: 10px;
-        background: var(--accent-strong);
-        color: white;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #19d2f5, #0b88b5);
+        color: #031018;
+        font-family: "Orbitron", sans-serif;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        box-shadow: 0 12px 30px rgba(13, 180, 216, 0.24);
       }
       form.composer button:disabled {
-        background: #475569;
+        background: #325160;
         cursor: not-allowed;
       }
 
@@ -442,7 +626,8 @@
         color: var(--muted);
         font-size: .72rem;
         text-align: center;
-        padding: .5rem 0 1rem;
+        padding: .6rem 0 1rem;
+        letter-spacing: .06em;
       }
       footer a { color: var(--muted); }
 
@@ -466,7 +651,7 @@
         left: 0;
         height: 100vh;
         width: min(var(--drawer-width, 420px), 92vw);
-        background: var(--surface);
+        background: rgba(4, 13, 21, 0.96);
         border-right: 1px solid var(--border);
         color: var(--fg);
         transform: translateX(-100%);
@@ -474,6 +659,7 @@
         z-index: 10;
         display: flex;
         flex-direction: column;
+        backdrop-filter: blur(18px);
       }
       body[data-menu="open"] aside.drawer { transform: translateX(0); }
       /* Drag handle on the right edge of the drawer. Hidden on mobile where
@@ -534,8 +720,16 @@
         justify-content: space-between;
         padding: 1rem 1.1rem;
         border-bottom: 1px solid var(--border);
+        background: rgba(8, 28, 42, 0.42);
       }
-      .drawer-header h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+      .drawer-header h2 {
+        margin: 0;
+        font-size: .96rem;
+        font-weight: 700;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        font-family: "Orbitron", sans-serif;
+      }
       .drawer-close {
         background: transparent;
         border: 0;
@@ -591,7 +785,7 @@
         padding: .55rem .7rem;
         border: 1px solid var(--border-strong);
         border-radius: 8px;
-        background: var(--surface-2);
+        background: rgba(9, 29, 45, 0.9);
         color: var(--fg);
         font: inherit;
       }
@@ -611,7 +805,7 @@
 
       /* Mini button used for inline actions like "Reset" next to a label. */
       .mini-btn {
-        background: var(--surface-2);
+        background: rgba(9, 29, 45, 0.92);
         border: 1px solid var(--border-strong);
         border-radius: 6px;
         padding: .18rem .5rem;
@@ -625,7 +819,7 @@
         display: block;
         width: 100%;
         margin: .25rem 0 .5rem;
-        background: var(--surface-2);
+        background: rgba(9, 29, 45, 0.92);
         border: 1px solid var(--border-strong);
         border-radius: 6px;
         padding: .35rem .55rem;
@@ -640,6 +834,30 @@
         color: var(--muted);
         margin: -.2rem 0 .5rem;
         font-style: italic;
+      }
+      @media (max-width: 700px) {
+        .topbar {
+          padding: .8rem;
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+        .topbar .stats {
+          width: 100%;
+          border-radius: 18px;
+        }
+        .app {
+          padding: .8rem;
+        }
+        main.chat {
+          border-radius: 22px;
+          padding: .85rem;
+        }
+        .msg {
+          max-width: 92%;
+        }
+        .hero-core {
+          width: min(62vw, 220px);
+        }
       }
 
       /* Help tooltip: small "?" next to a label, tooltip content in data-help.
@@ -862,6 +1080,10 @@ Preset use cases (temperature · top-p):
           <line x1="4" y1="17" x2="20" y2="17"/>
         </svg>
       </button>
+      <div class="topbar-brand">
+        <h1>Friday Core</h1>
+        <div class="topbar-subtitle">Adaptive Intelligence Console</div>
+      </div>
       <div class="spacer"></div>
       <div class="stats" id="stats" aria-live="polite" title="Running totals for this conversation">
         <span id="stat-msgs">0</span>&nbsp;<span class="label">msgs</span><span class="sep">·</span><span id="stat-in">0</span>&nbsp;<span class="label">tokens in</span><span class="sep" id="stat-cached-sep" hidden>·</span><span class="cached" id="stat-cached" hidden>0 cached</span><span class="sep">·</span><span id="stat-out">0</span>&nbsp;<span class="label">tokens out</span><span class="sep">·</span><span class="cost" id="stat-cost">~$0.0000</span>&nbsp;<span class="label">total</span>
@@ -871,8 +1093,14 @@ Preset use cases (temperature · top-p):
     <div class="app">
       <main id="chat" class="chat">
         <div class="hero" id="placeholder">
-          <h1 class="hero-title">Personal Assistant</h1>
-          <p class="hero-tagline">A chatbot you can shape into anything.</p>
+          <div class="hero-core" aria-hidden="true">
+            <div class="hero-orbit"></div>
+            <div class="hero-core-center"></div>
+          </div>
+          <div class="hero-label">System Online</div>
+          <h1 class="hero-title">Friday</h1>
+          <p class="hero-tagline">A lightweight onboard AI interface for chat, planning, and quick command-style assistance.</p>
+          <p class="hero-hint">Open settings to add your API key, then ask for research, summaries, code help, or everyday tasks.</p>
         </div>
       </main>
 
@@ -880,15 +1108,15 @@ Preset use cases (temperature · top-p):
         <input
           id="input"
           type="text"
-          placeholder="Ask anything..."
+          placeholder="Give me a task, Commander..."
           autocomplete="off"
           required
         />
-        <button id="send" type="submit">Send</button>
+        <button id="send" type="submit">Deploy</button>
       </form>
 
       <footer>
-        Static chatbot on GitHub Pages ·
+        Cinematic AI console ·
         <a href="https://github.com/klodzikowski/lmt-chatbot" target="_blank" rel="noopener"
           >source</a
         >
@@ -897,8 +1125,9 @@ Preset use cases (temperature · top-p):
 
     <script>
       const DEFAULT_SYSTEM =
-        "You are a helpful personal assistant. Be concise, clear, and friendly. " +
-        "Ask a brief clarifying question when the request is ambiguous.";
+        "You are FRIDAY, a sleek and capable onboard AI assistant. Be concise, calm, and highly useful. " +
+        "Use polished, natural language with light technical confidence. " +
+        "When a request is ambiguous, ask one short clarifying question before proceeding.";
 
       // Caricatures of each product's public vibe, not their real system prompts
       // (which aren't published). 'personal-assistant' == DEFAULT_SYSTEM so the
@@ -1453,8 +1682,14 @@ Preset use cases (temperature · top-p):
       function renderHero() {
         chatEl.innerHTML = `
           <div class="hero" id="placeholder">
-            <h1 class="hero-title">Personal Assistant</h1>
-            <p class="hero-tagline">A chatbot you can shape into anything.</p>
+            <div class="hero-core" aria-hidden="true">
+              <div class="hero-orbit"></div>
+              <div class="hero-core-center"></div>
+            </div>
+            <div class="hero-label">System Online</div>
+            <h1 class="hero-title">Friday</h1>
+            <p class="hero-tagline">A lightweight onboard AI interface for chat, planning, and quick command-style assistance.</p>
+            <p class="hero-hint">Open settings to add your API key, then ask for research, summaries, code help, or everyday tasks.</p>
           </div>
         `;
       }
