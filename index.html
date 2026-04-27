@@ -407,6 +407,9 @@
         box-shadow: 0 0 18px rgba(106, 230, 255, 0.55);
         animation: pulseGlow 2s ease-in-out infinite;
       }
+      body[data-speaking="true"] .chat-indicator-core {
+        animation-duration: .8s;
+      }
       .turn {
         display: flex;
         flex-direction: column;
@@ -464,7 +467,8 @@
           radial-gradient(circle at center, rgba(184, 249, 255, 0.98) 0%, rgba(82, 231, 255, 0.9) 26%, rgba(13, 107, 134, 0.65) 48%, rgba(0, 0, 0, 0) 76%);
         box-shadow: 0 0 24px rgba(106, 230, 255, 0.42);
       }
-      .turn.assistant[data-streaming="true"] .msg.assistant::after {
+      .turn.assistant[data-streaming="true"] .msg.assistant::after,
+      .turn.assistant[data-speaking="true"] .msg.assistant::after {
         animation: pulseGlow 1.2s ease-in-out infinite;
       }
       .msg-inner {
@@ -493,8 +497,18 @@
       .voice-bars span:nth-child(2) { animation-delay: .15s; }
       .voice-bars span:nth-child(3) { animation-delay: .3s; }
       .voice-bars span:nth-child(4) { animation-delay: .45s; }
-      .turn.assistant[data-streaming="true"] .voice-bars {
+      .turn.assistant[data-streaming="true"] .voice-bars,
+      .turn.assistant[data-speaking="true"] .voice-bars {
         opacity: 1;
+      }
+      .turn.assistant[data-speaking="true"] .voice-bars span {
+        animation-duration: .55s;
+      }
+      .field-help {
+        margin: -.35rem 0 .55rem;
+        color: var(--muted);
+        font-size: .72rem;
+        line-height: 1.5;
       }
       .msg.error {
         align-self: stretch;
@@ -1392,6 +1406,21 @@ Preset use cases (temperature · top-p):
           Token probabilities aren't returned by reasoning models (gpt-5 family). The reply will render as normal markdown until you switch to an older model.
         </div>
 
+        <div class="field checkbox-field">
+          <input type="checkbox" id="speak-replies" />
+          <label for="speak-replies">Speak replies aloud</label>
+          <button type="button" class="help-tip" data-help="Uses your browser's built-in speech synthesis. Voice quality depends on the voices installed on your device and browser." aria-label="About voice replies">?</button>
+        </div>
+        <div class="field">
+          <div class="field-header">
+            <label for="voice-select">Voice</label>
+          </div>
+          <select id="voice-select">
+            <option value="">System default</option>
+          </select>
+          <div class="field-help">For the most JARVIS-like result, choose an English voice if your browser lists one.</div>
+        </div>
+
         <div class="field">
           <div class="field-header">
             <label for="maxtok">Max tokens<button type="button" class="help-tip" data-help="Hard cap on reply length. Roughly 1 token ≈ 0.75 words. Higher values allow longer replies but cost more per message." aria-label="About max tokens">?</button></label>
@@ -1487,7 +1516,7 @@ Preset use cases (temperature · top-p):
             </div>
             <div class="chat-indicator">
               <span class="chat-indicator-core"></span>
-              <span>Listening</span>
+              <span id="chat-indicator-status">Listening</span>
             </div>
           </div>
           <div class="hero" id="placeholder">
@@ -1594,6 +1623,7 @@ Preset use cases (temperature · top-p):
         temperature: 0.8,
         top_p: 1.0,
         max_tokens: 1024,
+        speak_replies: false,
       };
       // Rough April-2026 USD per 1M tokens. Values are ballpark for teaching —
       // check platform.openai.com/pricing for current rates before relying on them.
@@ -1661,6 +1691,8 @@ Preset use cases (temperature · top-p):
         top_p: "lmt-chatbot-top-p",
         max_tokens: "lmt-chatbot-max-tokens",
         show_logprobs: "lmt-chatbot-show-logprobs",
+        speak_replies: "lmt-chatbot-speak-replies",
+        voice_name: "lmt-chatbot-voice-name",
         drawer_width: "lmt-chatbot-drawer-width",
       };
 
@@ -1682,6 +1714,8 @@ Preset use cases (temperature · top-p):
       const presetSelect = document.getElementById("preset");
       const samplingPresetSelect = document.getElementById("sampling-preset");
       const showLogprobsInput = document.getElementById("show-logprobs");
+      const speakRepliesInput = document.getElementById("speak-replies");
+      const voiceSelect = document.getElementById("voice-select");
       const resizeHandle = document.getElementById("drawer-resize");
 
       const chatEl = document.getElementById("chat");
@@ -1699,6 +1733,7 @@ Preset use cases (temperature · top-p):
       const downloadDetailedBtn = document.getElementById("download-detailed");
       const clearBtn = document.getElementById("clear");
       const resetAllBtn = document.getElementById("reset-all");
+      let chatIndicatorStatus = document.getElementById("chat-indicator-status");
 
       const history = [];
       let tokensIn = 0;
@@ -1709,6 +1744,8 @@ Preset use cases (temperature · top-p):
       // delta in usage.prompt_tokens between successive API responses.
       let prevPromptTokens = 0;
       let prevCompletionTokens = 0;
+      let availableVoices = [];
+      let activeUtterance = null;
 
       // Hydrate controls from sessionStorage.
       keyInput.value = sessionStorage.getItem(KEYS.apiKey) || "";
@@ -1718,6 +1755,7 @@ Preset use cases (temperature · top-p):
       toppInput.value = sessionStorage.getItem(KEYS.top_p) ?? DEFAULTS.top_p;
       maxtokInput.value = sessionStorage.getItem(KEYS.max_tokens) ?? DEFAULTS.max_tokens;
       showLogprobsInput.checked = sessionStorage.getItem(KEYS.show_logprobs) === "1";
+      speakRepliesInput.checked = sessionStorage.getItem(KEYS.speak_replies) === "1";
       renderSliderValues();
 
       // Persist on input.
@@ -1744,6 +1782,14 @@ Preset use cases (temperature · top-p):
       showLogprobsInput.addEventListener("change", () => {
         sessionStorage.setItem(KEYS.show_logprobs, showLogprobsInput.checked ? "1" : "0");
         applyLogprobsState();
+      });
+      speakRepliesInput.addEventListener("change", () => {
+        sessionStorage.setItem(KEYS.speak_replies, speakRepliesInput.checked ? "1" : "0");
+        if (!speakRepliesInput.checked) stopSpeech();
+        applySpeechState();
+      });
+      voiceSelect.addEventListener("change", () => {
+        setOrClear(KEYS.voice_name, voiceSelect.value);
       });
 
       samplingPresetSelect.addEventListener("change", () => {
@@ -1781,6 +1827,105 @@ Preset use cases (temperature · top-p):
         document.body.dataset.logprobsOn = showLogprobsInput.checked ? "true" : "false";
       }
       applyLogprobsState();
+
+      function applySpeechState(label = null) {
+        const speaking = document.body.dataset.speaking === "true";
+        if (chatIndicatorStatus) {
+          if (label) chatIndicatorStatus.textContent = label;
+          else if (speaking) chatIndicatorStatus.textContent = "Speaking";
+          else chatIndicatorStatus.textContent = "Listening";
+        }
+      }
+
+      function pickPreferredVoice(voices) {
+        const preferredName = sessionStorage.getItem(KEYS.voice_name) || voiceSelect.value;
+        if (preferredName) {
+          const exact = voices.find((voice) => voice.name === preferredName);
+          if (exact) return exact;
+        }
+        return (
+          voices.find((voice) => /en-gb/i.test(voice.lang) && /(daniel|george|arthur|male|uk)/i.test(`${voice.name} ${voice.voiceURI}`)) ||
+          voices.find((voice) => /en-gb/i.test(voice.lang)) ||
+          voices.find((voice) => /^en/i.test(voice.lang)) ||
+          voices[0] ||
+          null
+        );
+      }
+
+      function populateVoiceOptions() {
+        if (!("speechSynthesis" in window)) {
+          voiceSelect.innerHTML = '<option value="">Speech not supported in this browser</option>';
+          voiceSelect.disabled = true;
+          speakRepliesInput.disabled = true;
+          applySpeechState("No Voice");
+          return;
+        }
+        availableVoices = window.speechSynthesis.getVoices();
+        const selectedValue = sessionStorage.getItem(KEYS.voice_name) || voiceSelect.value || "";
+        voiceSelect.innerHTML = '<option value="">System default</option>';
+        for (const voice of availableVoices) {
+          const option = document.createElement("option");
+          option.value = voice.name;
+          option.textContent = `${voice.name} (${voice.lang})`;
+          voiceSelect.appendChild(option);
+        }
+        const preferred = pickPreferredVoice(availableVoices);
+        voiceSelect.value =
+          availableVoices.some((voice) => voice.name === selectedValue) ? selectedValue : (preferred?.name || "");
+      }
+
+      function stopSpeech() {
+        if (!("speechSynthesis" in window)) return;
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+          window.speechSynthesis.cancel();
+        }
+        activeUtterance = null;
+        document.body.dataset.speaking = "false";
+        document.querySelectorAll('.turn.assistant[data-speaking="true"]').forEach((el) => {
+          el.dataset.speaking = "false";
+        });
+        applySpeechState();
+      }
+
+      function speakReply(text, wrap) {
+        if (!speakRepliesInput.checked || !("speechSynthesis" in window)) return;
+        const cleanText = text.replace(/[`*_>#-]+/g, " ").replace(/\s+/g, " ").trim();
+        if (!cleanText) return;
+        stopSpeech();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        const selectedVoice = pickPreferredVoice(window.speechSynthesis.getVoices());
+        if (selectedVoice) utterance.voice = selectedVoice;
+        utterance.rate = 0.95;
+        utterance.pitch = 0.9;
+        utterance.onstart = () => {
+          activeUtterance = utterance;
+          document.body.dataset.speaking = "true";
+          if (wrap) wrap.dataset.speaking = "true";
+          applySpeechState("Speaking");
+        };
+        utterance.onend = () => {
+          if (wrap) wrap.dataset.speaking = "false";
+          if (activeUtterance === utterance) activeUtterance = null;
+          document.body.dataset.speaking = "false";
+          applySpeechState();
+        };
+        utterance.onerror = () => {
+          if (wrap) wrap.dataset.speaking = "false";
+          if (activeUtterance === utterance) activeUtterance = null;
+          document.body.dataset.speaking = "false";
+          applySpeechState("Voice Error");
+          setTimeout(() => applySpeechState(), 1800);
+        };
+        window.speechSynthesis.speak(utterance);
+      }
+
+      if ("speechSynthesis" in window) {
+        populateVoiceOptions();
+        window.speechSynthesis.onvoiceschanged = populateVoiceOptions;
+      } else {
+        applySpeechState("No Voice");
+      }
+      applySpeechState();
 
       resetSystemBtn.addEventListener("click", () => {
         systemInput.value = DEFAULT_SYSTEM;
@@ -1885,6 +2030,7 @@ Preset use cases (temperature · top-p):
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
+        stopSpeech();
         const text = input.value.trim();
         if (!text) return;
         if (!keyInput.value) {
@@ -1961,6 +2107,7 @@ Preset use cases (temperature · top-p):
             resetBubbleInner(loading);
             loading.inner.insertAdjacentHTML("beforeend", renderMarkdown(reply));
           }
+          speakReply(reply, loading.wrap);
           const entry = {
             role: "assistant",
             content: reply,
@@ -2024,6 +2171,7 @@ Preset use cases (temperature · top-p):
 
       async function regenerate() {
         if (!history.length) return;
+        stopSpeech();
         const last = history[history.length - 1];
         if (last.role !== "assistant") return;
         // Remove the old reply from both history and DOM, then ask for a new
@@ -2088,6 +2236,7 @@ Preset use cases (temperature · top-p):
       clearBtn.addEventListener("click", () => {
         if (!history.length) return;
         if (!confirm("Clear the conversation? Key and settings stay.")) return;
+        stopSpeech();
         history.length = 0;
         tokensIn = 0;
         tokensOut = 0;
@@ -2108,7 +2257,7 @@ Preset use cases (temperature · top-p):
             </div>
             <div class="chat-indicator">
               <span class="chat-indicator-core"></span>
-              <span>Listening</span>
+              <span id="chat-indicator-status">Listening</span>
             </div>
           </div>
           <div class="hero" id="placeholder">
@@ -2136,23 +2285,29 @@ Preset use cases (temperature · top-p):
             </div>
           </div>
         `;
+        chatIndicatorStatus = document.getElementById("chat-indicator-status");
+        applySpeechState();
       }
 
       resetAllBtn.addEventListener("click", () => {
         if (!confirm("Reset everything? This wipes the key, the system prompt, the sliders, and the conversation.")) return;
         Object.values(KEYS).forEach((k) => sessionStorage.removeItem(k));
+        stopSpeech();
         keyInput.value = "";
         systemInput.value = DEFAULT_SYSTEM;
         modelSelect.value = DEFAULTS.model;
         tempInput.value = DEFAULTS.temperature;
         toppInput.value = DEFAULTS.top_p;
         maxtokInput.value = DEFAULTS.max_tokens;
+        speakRepliesInput.checked = DEFAULTS.speak_replies;
+        voiceSelect.value = "";
         renderSliderValues();
         applySamplingLock();
         syncPresetIndicator();
         syncSamplingPresetIndicator();
         showLogprobsInput.checked = false;
         applyLogprobsState();
+        applySpeechState();
         history.length = 0;
         tokensIn = 0;
         tokensOut = 0;
