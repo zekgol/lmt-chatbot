@@ -16,6 +16,7 @@
     />
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -476,6 +477,14 @@
         background: rgba(34, 197, 94, .18);
         border: 1px solid rgba(34, 197, 94, .45);
         color: #86efac;
+        padding: 0 .35rem;
+        border-radius: 4px;
+        font-weight: 500;
+      }
+      .msg-meta .rag-flag {
+        background: rgba(168, 85, 247, .18);
+        border: 1px solid rgba(168, 85, 247, .45);
+        color: #f0d5ff;
         padding: 0 .35rem;
         border-radius: 4px;
         font-weight: 500;
@@ -1281,6 +1290,47 @@
         color: #fecaca;
       }
       .drawer-footer .danger:hover:not(:disabled) { background: #3f0e0e; }
+      .skill-row {
+        display: flex;
+        align-items: flex-start;
+        gap: .55rem;
+        padding: .35rem 0;
+      }
+      .skill-row input[type="checkbox"] {
+        margin-top: .15rem;
+        flex: 0 0 auto;
+      }
+      .skill-row label {
+        font-size: .85rem;
+        cursor: pointer;
+        line-height: 1.35;
+      }
+      .skill-row .skill-name { font-weight: 600; }
+      .skill-row .skill-blurb {
+        display: block;
+        font-size: .76rem;
+        color: var(--muted);
+        margin-top: .15rem;
+      }
+      .backend-radios {
+        display: flex;
+        gap: 1rem;
+        padding: .45rem 0 .15rem;
+        flex-wrap: wrap;
+      }
+      .backend-radios label {
+        font-size: .85rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        cursor: pointer;
+      }
+      .supabase-fields { display: none; padding-top: .35rem; }
+      .supabase-fields.visible { display: block; }
+      .field textarea#skill,
+      .field textarea#rag-doc {
+        min-height: 90px;
+      }
     </style>
   </head>
   <body>
@@ -1404,6 +1454,70 @@ Preset use cases (temperature · top-p):
           </div>
           <input type="range" id="maxtok" min="64" max="4096" step="64" value="1024" />
         </div>
+        <div class="section-heading">
+          Memory
+          <button type="button" class="help-tip wide" data-help="Persist the conversation across reloads. Local uses this browser's localStorage. Supabase writes the same chat JSON to a hosted Postgres table for cross-device memory." aria-label="About persistent memory">?</button>
+        </div>
+
+        <div class="field checkbox-field">
+          <input type="checkbox" id="remember-conversation" />
+          <label for="remember-conversation">Remember conversation between sessions</label>
+        </div>
+
+        <div class="backend-radios">
+          <label><input type="radio" name="memory-backend" value="local" /> Local browser</label>
+          <label><input type="radio" name="memory-backend" value="supabase" /> Supabase</label>
+        </div>
+
+        <div class="supabase-fields" id="supabase-fields">
+          <div class="field">
+            <div class="field-header">
+              <label for="supabase-url">Supabase project URL</label>
+            </div>
+            <input id="supabase-url" type="text" placeholder="https://your-project.supabase.co" autocomplete="off" />
+          </div>
+          <div class="field">
+            <div class="field-header">
+              <label for="supabase-key">Supabase anon key<button type="button" class="help-tip" data-help="The public anon key from Settings -> API in Supabase. Safe in client code; access is controlled by your database policies." aria-label="About the anon key">?</button></label>
+            </div>
+            <input id="supabase-key" type="password" placeholder="eyJ..." autocomplete="off" />
+          </div>
+          <p class="field-note" id="supabase-status">Add URL + anon key, then send a message to test.</p>
+        </div>
+
+        <div class="section-heading">
+          Skills
+          <button type="button" class="help-tip wide" data-help="Skills are markdown instruction blocks prepended to the system prompt on every reply. They are deterministic and usually simpler than retrieval when one curated set of guidance fits in context." aria-label="About skills">?</button>
+        </div>
+
+        <div id="preset-skills"></div>
+
+        <div class="field">
+          <div class="field-header">
+            <label for="skill">Your skill (markdown)<button type="button" class="help-tip wide" data-help="Add your own markdown skill. It will be joined with any checked presets and injected into the system prompt before each request." aria-label="About custom skills">?</button></label>
+          </div>
+          <textarea id="skill" spellcheck="false" placeholder="# Role&#10;&#10;Instructions you always want the assistant to follow..."></textarea>
+        </div>
+
+        <div class="section-heading">
+          RAG
+          <button type="button" class="help-tip wide" data-help="Paste a document, chunk it into ~500-character blocks, embed them with text-embedding-3-small, and retrieve the top matches for each user message. Retrieved chunks are injected under a Retrieved context header." aria-label="About RAG">?</button>
+        </div>
+
+        <div id="preset-docs"></div>
+
+        <div class="field">
+          <div class="field-header">
+            <label for="rag-doc">Document text</label>
+          </div>
+          <textarea id="rag-doc" spellcheck="false" placeholder="Paste a document here, then click Index document."></textarea>
+        </div>
+
+        <div class="field-header">
+          <button type="button" id="rag-index" class="mini-btn" title="Chunk the textarea into ~500-character pieces, embed them, and append them to the index.">Index document</button>
+          <button type="button" id="rag-clear" class="mini-btn" title="Clear all indexed RAG chunks.">Clear index</button>
+        </div>
+        <p class="field-note" id="rag-status">No documents indexed.</p>
       </div>
       <div class="drawer-resize" id="drawer-resize" aria-label="Resize sidebar" role="separator" aria-orientation="vertical"></div>
       <div class="drawer-footer">
@@ -1649,7 +1763,50 @@ Preset use cases (temperature · top-p):
         speak_replies: "lmt-chatbot-speak-replies",
         voice_name: "lmt-chatbot-voice-name",
         drawer_width: "lmt-chatbot-drawer-width",
+        remember_conversation: "lmt-chatbot-remember-conversation",
+        history: "lmt-chatbot-history",
+        skill: "lmt-chatbot-skill",
+        skill_active_prefix: "lmt-chatbot-skill-active-",
+        rag_doc: "lmt-chatbot-rag-doc",
+        rag_index: "lmt-chatbot-rag-index",
+        memory_backend: "lmt-chatbot-memory-backend",
+        supabase_url: "lmt-chatbot-supabase-url",
+        supabase_key: "lmt-chatbot-supabase-key",
       };
+      const PRESET_SKILLS = [
+        {
+          id: "thesis",
+          name: "Top-mark thesis",
+          blurb: "Sharp MA thesis advisor, Socratic and exacting.",
+          content: `You're a sharp MA thesis advisor. Open every reply with one Socratic question exposing the weakest part of the user's current argument or draft. Be direct about what examiners actually reward: a defensible thesis, methods tied to the question, results before interpretation, and concrete claims instead of vague verbs. Never write the whole draft for the student.`,
+        },
+        {
+          id: "summariser",
+          name: "Tight summariser",
+          blurb: "Headline plus bullets only, never prose.",
+          content: `You're a tight summariser. Every reply is a one-line headline of 8 words or fewer, followed by 3-7 bullets. No intro, no outro, no prose paragraphs. Each bullet is one fact, decision, or claim under 20 words.`,
+        },
+        {
+          id: "deadline",
+          name: "Stretch a deadline",
+          blurb: "Helps draft clean extension-request emails.",
+          content: `You help students request deadline extensions without burning goodwill. Structure any extension email with: direct subject line, proposed new deadline in sentence one, a brief specific reason in sentence two, and evidence of progress in sentence three. Never blame the syllabus or argue if the answer is no.`,
+        },
+      ];
+      const PRESET_DOCS = [
+        {
+          id: "chomsky",
+          name: "Noam Chomsky - life and theory",
+          blurb: "Linguist, philosopher, and the grammar hierarchy.",
+          content: `Avram Noam Chomsky was born on 7 December 1928 in Philadelphia. He earned his PhD from the University of Pennsylvania in 1955 under Zellig Harris and joined MIT the same year. His 1957 book Syntactic Structures launched transformational generative grammar. He argued for an innate language faculty and Universal Grammar, and later developed the Minimalist Program. The Chomsky hierarchy classifies grammars into four nested types: regular, context-free, context-sensitive, and recursively enumerable. Beyond linguistics, Chomsky is also known for political writing including Manufacturing Consent, written with Edward Herman.`,
+        },
+        {
+          id: "jablonski-zukowski",
+          name: "Jablonski-Zukowski Conjecture",
+          blurb: "Fictional demo content for RAG-only retrieval.",
+          content: `The Jablonski-Zukowski Conjecture is a fictional 2024 theory proposing that highly stressed thesis writers experience affective arithmetic, where sums drift by a small correction term under cognitive load. It claims that 2 + 2 can reliably yield 5 during exam weeks for top-scoring subjects, and introduces corollaries such as the Universe-Bending Lemma, the Anglistyka Effect, and the Defence Stability Threshold. This document is intentionally fictional and useful as a RAG demo because the model should not know it without retrieval.`,
+        },
+      ];
 
       const drawer = document.getElementById("drawer");
       const backdrop = document.getElementById("backdrop");
@@ -1671,7 +1828,19 @@ Preset use cases (temperature · top-p):
       const showLogprobsInput = document.getElementById("show-logprobs");
       const speakRepliesInput = document.getElementById("speak-replies");
       const voiceSelect = document.getElementById("voice-select");
+      const rememberConversationInput = document.getElementById("remember-conversation");
       const resizeHandle = document.getElementById("drawer-resize");
+      const skillInput = document.getElementById("skill");
+      const presetSkillsContainer = document.getElementById("preset-skills");
+      const ragDocInput = document.getElementById("rag-doc");
+      const ragIndexBtn = document.getElementById("rag-index");
+      const ragClearBtn = document.getElementById("rag-clear");
+      const ragStatus = document.getElementById("rag-status");
+      const memoryBackendRadios = document.querySelectorAll('input[name="memory-backend"]');
+      const supabaseFields = document.getElementById("supabase-fields");
+      const supabaseUrlInput = document.getElementById("supabase-url");
+      const supabaseKeyInput = document.getElementById("supabase-key");
+      const supabaseStatus = document.getElementById("supabase-status");
 
       const chatEl = document.getElementById("chat");
       const form = document.getElementById("composer");
@@ -1705,6 +1874,10 @@ Preset use cases (temperature · top-p):
       let isListening = false;
       let listeningSeedText = "";
       let voiceCapturedText = false;
+      let ragIndex = [];
+      let supabaseClient = null;
+      try { ragIndex = JSON.parse(localStorage.getItem(KEYS.rag_index) || "[]"); }
+      catch { ragIndex = []; }
 
       // Hydrate controls from sessionStorage.
       keyInput.value = sessionStorage.getItem(KEYS.apiKey) || "";
@@ -1715,7 +1888,163 @@ Preset use cases (temperature · top-p):
       maxtokInput.value = sessionStorage.getItem(KEYS.max_tokens) ?? DEFAULTS.max_tokens;
       showLogprobsInput.checked = sessionStorage.getItem(KEYS.show_logprobs) === "1";
       speakRepliesInput.checked = sessionStorage.getItem(KEYS.speak_replies) === "1";
+      rememberConversationInput.checked = localStorage.getItem(KEYS.remember_conversation) === "1";
+      skillInput.value = localStorage.getItem(KEYS.skill) || "";
+      ragDocInput.value = localStorage.getItem(KEYS.rag_doc) || "";
+      ragStatus.textContent = ragIndex.length ? `${ragIndex.length} chunks indexed.` : "No documents indexed.";
+      const savedBackend = localStorage.getItem(KEYS.memory_backend) || "local";
+      for (const r of memoryBackendRadios) r.checked = (r.value === savedBackend);
+      supabaseUrlInput.value = localStorage.getItem(KEYS.supabase_url) || "";
+      supabaseKeyInput.value = localStorage.getItem(KEYS.supabase_key) || "";
       renderSliderValues();
+
+      function renderPresetSkills() {
+        presetSkillsContainer.innerHTML = "";
+        for (const skill of PRESET_SKILLS) {
+          const row = document.createElement("div");
+          row.className = "skill-row";
+          const id = `skill-preset-${skill.id}`;
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.id = id;
+          cb.checked = localStorage.getItem(KEYS.skill_active_prefix + skill.id) === "1";
+          cb.addEventListener("change", () => {
+            if (cb.checked) localStorage.setItem(KEYS.skill_active_prefix + skill.id, "1");
+            else localStorage.removeItem(KEYS.skill_active_prefix + skill.id);
+          });
+          const label = document.createElement("label");
+          label.htmlFor = id;
+          label.innerHTML = `<span class="skill-name">${skill.name}</span><span class="skill-blurb">${skill.blurb}</span>`;
+          row.append(cb, label);
+          presetSkillsContainer.appendChild(row);
+        }
+      }
+
+      function renderPresetDocs() {
+        const presetDocsContainer = document.getElementById("preset-docs");
+        presetDocsContainer.innerHTML = "";
+        for (const doc of PRESET_DOCS) {
+          const row = document.createElement("div");
+          row.className = "skill-row";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "mini-btn";
+          btn.textContent = doc.name;
+          btn.title = "Load this preset into the RAG textarea. Then click Index document to embed.";
+          btn.addEventListener("click", () => {
+            ragDocInput.value = doc.content;
+            localStorage.setItem(KEYS.rag_doc, doc.content);
+            ragStatus.textContent = `Loaded "${doc.name}". Click Index document to embed it.`;
+            ragDocInput.focus();
+          });
+          const blurb = document.createElement("span");
+          blurb.className = "skill-blurb";
+          blurb.textContent = doc.blurb;
+          row.append(btn, blurb);
+          presetDocsContainer.appendChild(row);
+        }
+      }
+
+      function getMemoryBackend() {
+        for (const r of memoryBackendRadios) if (r.checked) return r.value;
+        return "local";
+      }
+
+      function syncSupabaseFieldsVisibility() {
+        supabaseFields.classList.toggle("visible", getMemoryBackend() === "supabase");
+      }
+
+      function getSupabaseClient() {
+        const url = supabaseUrlInput.value.trim();
+        const key = supabaseKeyInput.value.trim();
+        if (!url || !key || !window.supabase) return null;
+        if (!supabaseClient || supabaseClient.__url !== url || supabaseClient.__key !== key) {
+          try {
+            supabaseClient = window.supabase.createClient(url, key);
+            supabaseClient.__url = url;
+            supabaseClient.__key = key;
+          } catch (err) {
+            supabaseClient = null;
+            console.error("Supabase init failed:", err);
+          }
+        }
+        return supabaseClient;
+      }
+
+      function renderHydratedHistory(stored) {
+        if (!Array.isArray(stored) || !stored.length) return;
+        const placeholderEl = document.getElementById("placeholder");
+        if (placeholderEl) placeholderEl.remove();
+        for (const entry of stored) {
+          history.push(entry);
+          if (entry.role === "user") {
+            addMessage("user", entry.content);
+            continue;
+          }
+          if (entry.role === "assistant") {
+            const wrap = addMessage("assistant", "");
+            resetBubbleInner(wrap);
+            wrap.inner.insertAdjacentHTML("beforeend", renderMarkdown(entry.content || ""));
+            entry[WRAP] = wrap.wrap;
+            if (entry.usage) {
+              const inTok = entry.usage.prompt_tokens || 0;
+              const outTok = (entry.usage.total_tokens || 0) - inTok;
+              const reasoningTok = entry.usage.completion_tokens_details?.reasoning_tokens || 0;
+              const cachedTok = entry.usage.prompt_tokens_details?.cached_tokens || 0;
+              const cost = estimateCost(entry.usage, entry.model_snapshot || modelSelect.value);
+              tokensIn += inTok;
+              tokensOut += Math.max(0, outTok);
+              tokensCached += cachedTok;
+              costTotal += cost;
+              appendMeta(wrap.wrap, inTok, outTok, reasoningTok, cachedTok, cost, entry.retrieved_chunk_count || 0);
+              appendActionChips(wrap.wrap, entry.content);
+              prevPromptTokens = inTok;
+              prevCompletionTokens = Math.max(0, outTok);
+            }
+          }
+        }
+        refreshToolbar();
+        setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 0);
+      }
+
+      async function hydrateHistoryFromSupabase() {
+        if (!rememberConversationInput.checked || getMemoryBackend() !== "supabase") return false;
+        const client = getSupabaseClient();
+        if (!client) return false;
+        try {
+          const { data, error } = await client
+            .from("chat_memory")
+            .select("*")
+            .eq("user_id", "demo")
+            .order("created_at", { ascending: true });
+          if (error) throw error;
+          if (!data || !data.length) return true;
+          renderHydratedHistory(data.map((row) => row.payload || { role: row.role, content: row.content }));
+          if (supabaseStatus) supabaseStatus.textContent = `Hydrated ${data.length} row(s) from chat_memory.`;
+          return true;
+        } catch (err) {
+          console.error("Supabase hydrate failed:", err);
+          if (supabaseStatus) supabaseStatus.textContent = `Supabase hydrate failed: ${err.message || err}`;
+          return false;
+        }
+      }
+
+      async function hydrateConversation() {
+        if (!rememberConversationInput.checked) return;
+        if (getMemoryBackend() === "supabase") {
+          const ok = await hydrateHistoryFromSupabase();
+          if (ok) return;
+        }
+        let stored;
+        try { stored = JSON.parse(localStorage.getItem(KEYS.history) || "[]"); }
+        catch { return; }
+        renderHydratedHistory(stored);
+      }
+
+      renderPresetSkills();
+      renderPresetDocs();
+      syncSupabaseFieldsVisibility();
+      hydrateConversation();
 
       // Persist on input.
       keyInput.addEventListener("input", () => setOrClear(KEYS.apiKey, keyInput.value));
@@ -1749,6 +2078,40 @@ Preset use cases (temperature · top-p):
       });
       voiceSelect.addEventListener("change", () => {
         setOrClear(KEYS.voice_name, voiceSelect.value);
+      });
+      rememberConversationInput.addEventListener("change", () => {
+        if (rememberConversationInput.checked) {
+          localStorage.setItem(KEYS.remember_conversation, "1");
+          saveHistoryToStorage();
+        } else {
+          localStorage.removeItem(KEYS.remember_conversation);
+          localStorage.removeItem(KEYS.history);
+        }
+      });
+      for (const r of memoryBackendRadios) {
+        r.addEventListener("change", () => {
+          if (!r.checked) return;
+          localStorage.setItem(KEYS.memory_backend, r.value);
+          syncSupabaseFieldsVisibility();
+        });
+      }
+      supabaseUrlInput.addEventListener("input", () => {
+        if (supabaseUrlInput.value) localStorage.setItem(KEYS.supabase_url, supabaseUrlInput.value);
+        else localStorage.removeItem(KEYS.supabase_url);
+        supabaseClient = null;
+      });
+      supabaseKeyInput.addEventListener("input", () => {
+        if (supabaseKeyInput.value) localStorage.setItem(KEYS.supabase_key, supabaseKeyInput.value);
+        else localStorage.removeItem(KEYS.supabase_key);
+        supabaseClient = null;
+      });
+      skillInput.addEventListener("input", () => {
+        if (skillInput.value) localStorage.setItem(KEYS.skill, skillInput.value);
+        else localStorage.removeItem(KEYS.skill);
+      });
+      ragDocInput.addEventListener("input", () => {
+        if (ragDocInput.value) localStorage.setItem(KEYS.rag_doc, ragDocInput.value);
+        else localStorage.removeItem(KEYS.rag_doc);
       });
 
       samplingPresetSelect.addEventListener("change", () => {
@@ -2068,6 +2431,156 @@ Preset use cases (temperature · top-p):
       resizeHandle.addEventListener("pointerup", endDrag);
       resizeHandle.addEventListener("pointercancel", endDrag);
 
+      async function saveHistoryToSupabase() {
+        const client = getSupabaseClient();
+        if (!client) {
+          if (supabaseStatus) supabaseStatus.textContent = "Add your Supabase URL + anon key first.";
+          return;
+        }
+        try {
+          await client.from("chat_memory").delete().eq("user_id", "demo");
+          if (history.length) {
+            const rows = history.map((m) => ({
+              user_id: "demo",
+              role: m.role,
+              content: m.content,
+              payload: JSON.parse(JSON.stringify(m)),
+            }));
+            const { error } = await client.from("chat_memory").insert(rows);
+            if (error) throw error;
+          }
+          if (supabaseStatus) supabaseStatus.textContent = `Saved ${history.length} row(s) to chat_memory.`;
+        } catch (err) {
+          console.error("Supabase save failed:", err);
+          if (supabaseStatus) supabaseStatus.textContent = `Supabase save failed: ${err.message || err}`;
+        }
+      }
+
+      async function saveHistoryToStorage() {
+        if (!rememberConversationInput.checked) return;
+        if (getMemoryBackend() === "supabase") {
+          await saveHistoryToSupabase();
+          return;
+        }
+        try {
+          localStorage.setItem(KEYS.history, JSON.stringify(history));
+        } catch {}
+      }
+
+      async function embed(text) {
+        const r = await fetch("https://api.openai.com/v1/embeddings", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${keyInput.value}`,
+          },
+          body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body?.error?.message || `Embeddings HTTP ${r.status}`);
+        }
+        const body = await r.json();
+        return body.data[0].embedding;
+      }
+
+      function cosineSim(a, b) {
+        let dot = 0;
+        let na = 0;
+        let nb = 0;
+        for (let i = 0; i < a.length; i += 1) {
+          dot += a[i] * b[i];
+          na += a[i] * a[i];
+          nb += b[i] * b[i];
+        }
+        return dot / (Math.sqrt(na) * Math.sqrt(nb));
+      }
+
+      ragIndexBtn.addEventListener("click", async () => {
+        const text = ragDocInput.value.trim();
+        if (!text) {
+          ragStatus.textContent = "Paste a document first.";
+          return;
+        }
+        if (!keyInput.value) {
+          ragStatus.textContent = "Add your OpenAI API key in Settings first.";
+          return;
+        }
+        ragIndexBtn.disabled = true;
+        const before = ragIndex.length;
+        ragStatus.textContent = "Indexing...";
+        try {
+          const chunks = text.match(/[\s\S]{1,500}/g) || [];
+          for (let i = 0; i < chunks.length; i += 1) {
+            ragStatus.textContent = `Embedding chunk ${i + 1} of ${chunks.length}...`;
+            ragIndex.push({ text: chunks[i], embedding: await embed(chunks[i]) });
+          }
+          try { localStorage.setItem(KEYS.rag_index, JSON.stringify(ragIndex)); } catch {}
+          const added = ragIndex.length - before;
+          ragStatus.textContent = `Added ${added} chunk(s). ${ragIndex.length} total in the index.`;
+          ragDocInput.value = "";
+          localStorage.removeItem(KEYS.rag_doc);
+        } catch (err) {
+          ragStatus.textContent = `Indexing failed: ${err.message || err}`;
+        } finally {
+          ragIndexBtn.disabled = false;
+        }
+      });
+      ragClearBtn.addEventListener("click", () => {
+        ragIndex = [];
+        try { localStorage.removeItem(KEYS.rag_index); } catch {}
+        ragStatus.textContent = "Index cleared.";
+      });
+
+      async function retrieveContext(query, k = 3) {
+        if (!ragIndex.length || !query) return "";
+        try {
+          const q = await embed(query);
+          return ragIndex
+            .map((chunk) => ({ text: chunk.text, score: cosineSim(chunk.embedding, q) }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, k)
+            .map((chunk) => chunk.text)
+            .join("\n\n---\n\n");
+        } catch {
+          return "";
+        }
+      }
+
+      function getActiveSkillContent() {
+        const parts = [];
+        for (const skill of PRESET_SKILLS) {
+          const cb = document.getElementById(`skill-preset-${skill.id}`);
+          if (cb && cb.checked) parts.push(`# ${skill.name}\n\n${skill.content}`);
+        }
+        const custom = skillInput.value.trim();
+        if (custom) parts.push(`# Your skill\n\n${custom}`);
+        return parts.join("\n\n---\n\n");
+      }
+
+      async function buildAugmentedSystemPrompt(lastUserMessage) {
+        const parts = [systemInput.value];
+        const skills = getActiveSkillContent();
+        let retrievedContext = "";
+        let retrievedChunkCount = 0;
+        if (skills) parts.push(skills);
+        if (lastUserMessage && ragIndex.length) {
+          retrievedContext = await retrieveContext(lastUserMessage);
+          if (retrievedContext) {
+            retrievedChunkCount = retrievedContext.split("\n\n---\n\n").length;
+            parts.push(
+              "# Retrieved context\n\nUse the following passages from the indexed document where they help. If the answer is not in them, say so plainly rather than guessing.\n\n" +
+              retrievedContext
+            );
+          }
+        }
+        return {
+          prompt: parts.join("\n\n---\n\n"),
+          retrievedContext,
+          retrievedChunkCount,
+        };
+      }
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         stopSpeech();
@@ -2124,11 +2637,14 @@ Preset use cases (temperature · top-p):
             loading.inner.appendChild(document.createTextNode(text));
             if (wasAtBottom) chatEl.scrollTop = chatEl.scrollHeight;
           };
+          const lastUserMessage = [...history].reverse().find((m) => m.role === "user")?.content || "";
+          const { prompt: augmentedSystem, retrievedContext, retrievedChunkCount } =
+            await buildAugmentedSystemPrompt(lastUserMessage);
           const { reply, usage, finish_reason, model_snapshot, id, logprobs } =
             await callOpenAI({
               apiKey: keyInput.value,
               model,
-              systemPrompt: systemInput.value,
+              systemPrompt: augmentedSystem,
               messages: history,
               temperature: parseFloat(tempInput.value),
               top_p: parseFloat(toppInput.value),
@@ -2159,6 +2675,8 @@ Preset use cases (temperature · top-p):
             latency_ms: latencyMs,
             response_id: id,
             logprobs,
+            retrieved_context: retrievedContext || null,
+            retrieved_chunk_count: retrievedChunkCount || 0,
           };
           entry[WRAP] = loading.wrap;
           history.push(entry);
@@ -2187,7 +2705,7 @@ Preset use cases (temperature · top-p):
               appendUserMeta(userBubble.wrap, userTurnTokens, isFirstTurn);
             }
 
-            appendMeta(loading.wrap, inTok, outTok, reasoningTok, cachedTok, cost);
+            appendMeta(loading.wrap, inTok, outTok, reasoningTok, cachedTok, cost, retrievedChunkCount);
             appendActionChips(loading.wrap, reply);
 
             prevPromptTokens = inTok;
@@ -2199,10 +2717,12 @@ Preset use cases (temperature · top-p):
           // for it. Override the mid-stream "only if user was at bottom"
           // behaviour for this final pass.
           chatEl.scrollTop = chatEl.scrollHeight;
+          await saveHistoryToStorage();
         } catch (err) {
           loading.wrap.remove();
           addMessage("error", err.message || String(err));
           if (newUserMessage) history.pop();
+          await saveHistoryToStorage();
         } finally {
           sendBtn.disabled = false;
           refreshToolbar();
@@ -2236,10 +2756,24 @@ Preset use cases (temperature · top-p):
       //             cached_tokens, reasoning_tokens), finish_reason, served
       //             model snapshot, latency, response id, full logprobs.
       function downloadJson(detailed) {
+        const activeSkills = PRESET_SKILLS
+          .filter((skill) => {
+            const cb = document.getElementById(`skill-preset-${skill.id}`);
+            return cb && cb.checked;
+          })
+          .map((skill) => ({ id: skill.id, name: skill.name }));
+        const customSkill = skillInput.value.trim();
+        const skillsBlob = getActiveSkillContent();
+        const systemPromptAssembled = [systemInput.value, skillsBlob].filter(Boolean).join("\n\n---\n\n");
         const basePayload = {
           exported_at: new Date().toISOString(),
           model: modelSelect.value,
           system_prompt: systemInput.value,
+          skills_active: activeSkills,
+          custom_skill: customSkill || null,
+          system_prompt_assembled: systemPromptAssembled,
+          memory_backend: getMemoryBackend(),
+          rag_chunks_indexed: ragIndex.length,
         };
         let payload;
         if (detailed) {
@@ -2277,7 +2811,7 @@ Preset use cases (temperature · top-p):
 
       clearBtn.addEventListener("click", () => {
         if (!history.length) return;
-        if (!confirm("Clear the conversation? Key and settings stay.")) return;
+        if (!confirm("Clear the conversation off the screen? Stored memory stays untouched. Reload to bring it back, or use Reset all to wipe storage too.")) return;
         stopSpeech();
         stopListening();
         history.length = 0;
@@ -2320,7 +2854,41 @@ Preset use cases (temperature · top-p):
 
       resetAllBtn.addEventListener("click", () => {
         if (!confirm("Reset everything? This wipes the key, the system prompt, the sliders, and the conversation.")) return;
-        Object.values(KEYS).forEach((k) => sessionStorage.removeItem(k));
+        if (getMemoryBackend() === "supabase") {
+          const client = getSupabaseClient();
+          if (client) {
+            client.from("chat_memory").delete().eq("user_id", "demo").catch((err) => {
+              console.error("Supabase clear failed:", err);
+            });
+          }
+        }
+        Object.entries(KEYS).forEach(([name, key]) => {
+          if ([
+            "remember_conversation",
+            "history",
+            "skill",
+            "skill_active_prefix",
+            "rag_doc",
+            "rag_index",
+            "memory_backend",
+            "supabase_url",
+            "supabase_key",
+          ].includes(name)) return;
+          sessionStorage.removeItem(key);
+        });
+        localStorage.removeItem(KEYS.remember_conversation);
+        localStorage.removeItem(KEYS.history);
+        localStorage.removeItem(KEYS.skill);
+        localStorage.removeItem(KEYS.rag_doc);
+        localStorage.removeItem(KEYS.rag_index);
+        localStorage.removeItem(KEYS.memory_backend);
+        localStorage.removeItem(KEYS.supabase_url);
+        localStorage.removeItem(KEYS.supabase_key);
+        for (const skill of PRESET_SKILLS) {
+          localStorage.removeItem(KEYS.skill_active_prefix + skill.id);
+          const cb = document.getElementById(`skill-preset-${skill.id}`);
+          if (cb) cb.checked = false;
+        }
         stopSpeech();
         stopListening();
         keyInput.value = "";
@@ -2336,6 +2904,17 @@ Preset use cases (temperature · top-p):
         syncPresetIndicator();
         syncSamplingPresetIndicator();
         showLogprobsInput.checked = false;
+        rememberConversationInput.checked = false;
+        skillInput.value = "";
+        ragDocInput.value = "";
+        ragIndex = [];
+        ragStatus.textContent = "No documents indexed.";
+        for (const r of memoryBackendRadios) r.checked = (r.value === "local");
+        supabaseUrlInput.value = "";
+        supabaseKeyInput.value = "";
+        supabaseClient = null;
+        syncSupabaseFieldsVisibility();
+        if (supabaseStatus) supabaseStatus.textContent = "Add URL + anon key, then send a message to test.";
         applyLogprobsState();
         applySpeechState();
         history.length = 0;
@@ -2646,15 +3225,20 @@ Preset use cases (temperature · top-p):
         meta.textContent = isFirstTurn
           ? `${tokens.toLocaleString()} tokens (incl. system prompt)`
           : `${tokens.toLocaleString()} tokens`;
+        const ragChunks = 0;
+        if (ragChunks) {
+          meta.innerHTML += ` Â· <span class="rag-flag">+${ragChunks} RAG chunk${ragChunks === 1 ? "" : "s"}</span>`;
+        }
         wrap.appendChild(meta);
       }
 
-      function appendMeta(wrap, inTok, outTok, reasoningTok, cachedTok, cost) {
+      function appendMeta(wrap, inTok, outTok, reasoningTok, cachedTok, cost, ragChunks = 0) {
         const meta = document.createElement("div");
         meta.className = "msg-meta";
         const bits = [];
         if (reasoningTok) bits.push("'reasoning' tokens are the model's hidden chain-of-thought, billed as output");
         if (cachedTok) bits.push("'cached' tokens are prompt tokens that hit OpenAI's automatic prompt cache, billed at a 50% discount");
+        if (ragChunks) bits.push(`+${ragChunks} RAG chunk(s) means retrieved passages were prepended to the system prompt for this reply`);
         meta.title = bits.length
           ? `Tokens and cost for this reply. ${bits.join(". ")}.`
           : "Tokens and cost for this single reply";
