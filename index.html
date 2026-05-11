@@ -1,0 +1,3416 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JARVIS Core Interface</title>
+    <meta
+      name="description"
+      content="A cinematic single-file AI console with a lightweight Jarvis-inspired interface."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Orbitron:wght@500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #120a05;
+        --surface: rgba(34, 17, 8, 0.78);
+        --surface-2: rgba(49, 24, 12, 0.86);
+        --surface-3: rgba(66, 31, 15, 0.94);
+        --fg: #fff2e7;
+        --muted: #d3a98b;
+        --border: rgba(255, 156, 84, 0.2);
+        --border-strong: rgba(255, 188, 126, 0.46);
+        --accent: #ffb36b;
+        --accent-strong: #ff8429;
+        --accent-soft: rgba(255, 152, 71, 0.16);
+        --warning: #ffd166;
+        --bubble-user: linear-gradient(135deg, rgba(145, 70, 20, 0.86), rgba(91, 37, 13, 0.96));
+        --bubble-user-fg: #fff5ec;
+        --bubble-assistant: linear-gradient(180deg, rgba(31, 14, 7, 0.96), rgba(18, 8, 4, 0.98));
+        --error-bg: rgba(95, 18, 28, 0.92);
+        --error-fg: #ffd6dd;
+        --shadow: 0 0 0 1px rgba(255, 163, 85, 0.08), 0 20px 60px rgba(0, 0, 0, 0.45);
+        --shadow-strong: 0 0 0 1px rgba(255, 174, 104, 0.12), 0 30px 90px rgba(0, 0, 0, 0.55);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: "Chakra Petch", "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.5;
+        overflow-x: hidden;
+        background-image:
+          radial-gradient(circle at 20% 20%, rgba(255, 118, 41, 0.18), transparent 28%),
+          radial-gradient(circle at 80% 18%, rgba(255, 184, 92, 0.12), transparent 22%),
+          radial-gradient(circle at 50% 100%, rgba(156, 66, 16, 0.18), transparent 38%),
+          linear-gradient(180deg, #1a0d06 0%, #0d0603 54%, #080402 100%);
+      }
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      body::before {
+        background:
+          linear-gradient(rgba(255, 178, 104, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 178, 104, 0.05) 1px, transparent 1px);
+        background-size: 90px 90px;
+        mask-image: radial-gradient(circle at center, black 24%, transparent 82%);
+        opacity: 0.32;
+      }
+      body::after {
+        background: linear-gradient(
+          180deg,
+          transparent 0%,
+          rgba(255, 177, 102, 0.04) 45%,
+          transparent 100%
+        );
+        animation: scanline 10s linear infinite;
+      }
+      body[data-menu="open"] { overflow: hidden; }
+
+      button { font: inherit; cursor: pointer; }
+      ::selection {
+        background: rgba(255, 177, 102, 0.22);
+        color: var(--fg);
+      }
+
+      @keyframes scanline {
+        from { transform: translateY(-100%); }
+        to { transform: translateY(100%); }
+      }
+      @keyframes pulseGlow {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(255, 177, 102, 0.18), 0 0 18px rgba(255, 122, 38, 0.12); }
+        50% { box-shadow: 0 0 0 1px rgba(255, 177, 102, 0.36), 0 0 30px rgba(255, 122, 38, 0.24); }
+      }
+      @keyframes ringSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes floatHud {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-8px); }
+      }
+      @keyframes tiltSpin {
+        from { transform: rotateX(72deg) rotateZ(0deg); }
+        to { transform: rotateX(72deg) rotateZ(360deg); }
+      }
+      @keyframes coreFlicker {
+        0%, 100% { opacity: .55; filter: blur(0px); }
+        50% { opacity: 1; filter: blur(1px); }
+      }
+      @keyframes voiceBars {
+        0%, 100% { transform: scaleY(.35); opacity: .45; }
+        50% { transform: scaleY(1); opacity: 1; }
+      }
+      @keyframes panelSweep {
+        from { transform: translateX(-120%); }
+        to { transform: translateX(180%); }
+      }
+
+      /* Top bar */
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        padding: .9rem 1.1rem;
+        background: rgba(3, 9, 15, 0.76);
+        border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(18px);
+      }
+      .menu-toggle {
+        background: rgba(7, 26, 40, 0.75);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        color: var(--fg);
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        box-shadow: inset 0 0 0 1px rgba(255, 178, 104, 0.08);
+      }
+      .menu-toggle:hover { background: rgba(11, 37, 56, 0.9); }
+      .menu-toggle svg { width: 18px; height: 18px; }
+      .topbar-brand {
+        display: flex;
+        flex-direction: column;
+        gap: .08rem;
+      }
+      .topbar h1 {
+        margin: 0;
+        font-family: "Orbitron", sans-serif;
+        font-size: .92rem;
+        font-weight: 700;
+        letter-spacing: .28em;
+        text-transform: uppercase;
+      }
+      .topbar-subtitle {
+        color: var(--muted);
+        font-size: .68rem;
+        letter-spacing: .22em;
+        text-transform: uppercase;
+      }
+      .topbar .spacer { flex: 1; }
+      .topbar .stats {
+        font-family: "Orbitron", ui-monospace, monospace;
+        font-size: .75rem;
+        color: var(--fg);
+        letter-spacing: .08em;
+        background: rgba(7, 23, 37, 0.8);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: .55rem .8rem;
+        box-shadow: inset 0 0 0 1px rgba(255, 178, 104, 0.05);
+      }
+      .topbar .stats .sep { color: var(--border-strong); margin: 0 .4rem; }
+      .topbar .stats .label { color: var(--muted); }
+      .topbar .stats .cost { color: var(--accent); }
+
+      /* App body */
+      .app {
+        max-width: 1380px;
+        margin: 0 auto;
+        height: calc(100vh - 55px);
+        display: grid;
+        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        gap: 1rem;
+        padding: 1rem;
+        position: relative;
+      }
+      .hud-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        min-height: 0;
+      }
+      .main-deck {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .hud-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background:
+          linear-gradient(180deg, rgba(7, 23, 37, 0.94), rgba(4, 12, 20, 0.98)),
+          radial-gradient(circle at top, rgba(255, 178, 104, 0.08), transparent 45%);
+        box-shadow: var(--shadow-strong);
+      }
+      .hud-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(110deg, transparent 0%, rgba(255, 178, 104, 0.08) 48%, transparent 100%);
+        transform: translateX(-120%);
+        animation: panelSweep 8s linear infinite;
+        pointer-events: none;
+      }
+      .hud-primary {
+        padding: 1.25rem;
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+      }
+      .hud-label {
+        color: var(--accent);
+        font-family: "Orbitron", sans-serif;
+        font-size: .72rem;
+        letter-spacing: .22em;
+        text-transform: uppercase;
+      }
+      .hud-title {
+        margin: .4rem 0 .25rem;
+        font-family: "Orbitron", sans-serif;
+        font-size: 1.9rem;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+      }
+      .hud-metrics {
+        display: grid;
+        gap: .7rem;
+      }
+      .hud-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .hud-metric {
+        position: relative;
+        padding: .8rem .9rem;
+        border: 1px solid rgba(255, 178, 104, 0.14);
+        border-radius: 18px;
+        background: rgba(42, 20, 9, 0.72);
+      }
+      .hud-metric strong {
+        display: block;
+        font-family: "Orbitron", sans-serif;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        font-size: .76rem;
+        color: var(--accent);
+        margin-bottom: .35rem;
+      }
+      .hud-metric span {
+        color: var(--fg);
+        font-size: .92rem;
+      }
+      .hud-primary .hero-core {
+        width: min(100%, 250px);
+        margin: 1rem auto .9rem;
+      }
+      main.chat {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: .5rem;
+        overflow-y: auto;
+        padding: 1.1rem;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background:
+          radial-gradient(circle at top, rgba(255, 178, 104, 0.06), transparent 40%),
+          linear-gradient(180deg, rgba(34, 16, 7, 0.82), rgba(17, 8, 4, 0.96));
+        box-shadow: var(--shadow-strong);
+        backdrop-filter: blur(14px);
+        position: relative;
+      }
+      main.chat::before,
+      main.chat::after {
+        content: "";
+        position: absolute;
+        width: 72px;
+        height: 72px;
+        border-color: rgba(255, 178, 104, 0.34);
+        pointer-events: none;
+      }
+      main.chat::before {
+        top: 12px;
+        left: 12px;
+        border-top: 1px solid;
+        border-left: 1px solid;
+      }
+      main.chat::after {
+        right: 12px;
+        bottom: 12px;
+        border-right: 1px solid;
+        border-bottom: 1px solid;
+      }
+      .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .2rem .2rem .9rem;
+        border-bottom: 1px solid rgba(255, 178, 104, 0.12);
+        margin-bottom: .4rem;
+      }
+      .chat-title {
+        margin: 0;
+        font-family: "Orbitron", sans-serif;
+        font-size: .94rem;
+        letter-spacing: .2em;
+        text-transform: uppercase;
+      }
+      .chat-subtitle {
+        margin: .2rem 0 0;
+        color: var(--muted);
+        font-size: .8rem;
+        letter-spacing: .08em;
+      }
+      .chat-indicator {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        color: var(--accent);
+        font-family: "Orbitron", sans-serif;
+        font-size: .72rem;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+      }
+      .chat-indicator-core {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #fff8ef 0%, #ffb36b 45%, rgba(255, 179, 107, 0) 80%);
+        box-shadow: 0 0 18px rgba(255, 165, 83, 0.55);
+        animation: pulseGlow 2s ease-in-out infinite;
+      }
+      body[data-speaking="true"] .chat-indicator-core {
+        animation-duration: .8s;
+      }
+      .turn {
+        display: flex;
+        flex-direction: column;
+        gap: .22rem;
+      }
+      .turn.assistant {
+        align-items: flex-start;
+      }
+      .turn.user {
+        align-items: flex-end;
+      }
+      .msg {
+        max-width: 80%;
+        padding: .9rem 1rem;
+        border-radius: 18px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        box-shadow: var(--shadow);
+      }
+      .msg.user {
+        align-self: flex-end;
+        background: var(--bubble-user);
+        color: var(--bubble-user-fg);
+        border: 1px solid rgba(125, 245, 255, 0.24);
+      }
+      .msg.assistant {
+        align-self: flex-start;
+        background: var(--bubble-assistant);
+        border: 1px solid var(--border-strong);
+        position: relative;
+        padding-left: 4.4rem;
+        min-width: min(100%, 320px);
+      }
+      .msg.assistant::before {
+        content: "JARVIS";
+        position: absolute;
+        top: -11px;
+        left: 64px;
+        padding: 0 .45rem;
+        border-radius: 999px;
+        background: rgba(4, 15, 24, 0.95);
+        border: 1px solid var(--border);
+        color: var(--accent);
+        font-family: "Orbitron", sans-serif;
+        font-size: .6rem;
+        letter-spacing: .18em;
+      }
+      .msg.assistant::after {
+        content: "";
+        position: absolute;
+        inset: 16px auto 16px 18px;
+        width: 28px;
+        border-radius: 999px;
+        background:
+          radial-gradient(circle at center, rgba(255, 234, 206, 0.98) 0%, rgba(255, 176, 92, 0.92) 28%, rgba(176, 77, 18, 0.65) 54%, rgba(0, 0, 0, 0) 76%);
+        box-shadow: 0 0 24px rgba(255, 169, 89, 0.42);
+      }
+      .turn.assistant[data-streaming="true"] .msg.assistant::after,
+      .turn.assistant[data-speaking="true"] .msg.assistant::after {
+        animation: pulseGlow 1.2s ease-in-out infinite;
+      }
+      .msg-inner {
+        position: relative;
+      }
+      .voice-bars {
+        position: absolute;
+        top: 50%;
+        left: 56px;
+        transform: translateY(-50%);
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        height: 28px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .voice-bars span {
+        width: 3px;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(180deg, rgba(255, 229, 198, 0.95), rgba(255, 123, 38, 0.42));
+        transform-origin: center;
+        animation: voiceBars 1s ease-in-out infinite;
+      }
+      .voice-bars span:nth-child(2) { animation-delay: .15s; }
+      .voice-bars span:nth-child(3) { animation-delay: .3s; }
+      .voice-bars span:nth-child(4) { animation-delay: .45s; }
+      .turn.assistant[data-streaming="true"] .voice-bars,
+      .turn.assistant[data-speaking="true"] .voice-bars {
+        opacity: 1;
+      }
+      .turn.assistant[data-speaking="true"] .voice-bars span {
+        animation-duration: .55s;
+      }
+      .field-help {
+        margin: -.35rem 0 .55rem;
+        color: var(--muted);
+        font-size: .72rem;
+        line-height: 1.5;
+      }
+      .msg.error {
+        align-self: stretch;
+        background: var(--error-bg);
+        color: var(--error-fg);
+        font-size: .9rem;
+      }
+      /* Small per-message meta line below bubbles. */
+      .msg-meta {
+        align-self: flex-start;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .7rem;
+        color: var(--muted);
+        padding: 0 .2rem;
+        margin: -.15rem 0 .3rem;
+      }
+      .msg-meta.user { align-self: flex-end; text-align: right; }
+      .msg-meta .cost { color: var(--accent); }
+      /* When OpenAI's automatic prompt cache hits (prompts â‰¥ 1024 tokens),
+         highlight it so students notice the moment it kicks in. */
+      .msg-meta .cached {
+        background: rgba(34, 197, 94, .18);
+        border: 1px solid rgba(34, 197, 94, .45);
+        color: #86efac;
+        padding: 0 .35rem;
+        border-radius: 4px;
+        font-weight: 500;
+      }
+      .msg-meta .rag-flag {
+        background: rgba(168, 85, 247, .18);
+        border: 1px solid rgba(168, 85, 247, .45);
+        color: #f0d5ff;
+        padding: 0 .35rem;
+        border-radius: 4px;
+        font-weight: 500;
+      }
+
+      /* Action chips (copy, regenerate) sit below the assistant meta line. */
+      .msg-actions {
+        align-self: flex-start;
+        display: flex;
+        gap: .35rem;
+        margin: -.15rem 0 .4rem;
+      }
+      .action-chip {
+        background: transparent;
+        border: 1px solid var(--border-strong);
+        color: var(--muted);
+        font-size: .7rem;
+        padding: .15rem .5rem;
+        border-radius: 5px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: color 120ms ease, background 120ms ease;
+      }
+      .action-chip:hover { color: var(--fg); background: var(--surface-2); }
+      .action-chip.copied { color: var(--accent); border-color: var(--accent); }
+
+      /* Markdown styling inside assistant bubbles. The bubble keeps its dark
+         card look; inner HTML is sanitised through DOMPurify before injection. */
+      .msg.assistant p { margin: 0 0 .5rem; }
+      .msg.assistant p:last-child { margin-bottom: 0; }
+      .msg.assistant h1,
+      .msg.assistant h2,
+      .msg.assistant h3,
+      .msg.assistant h4 {
+        margin: .6rem 0 .3rem;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+      .msg.assistant h1 { font-size: 1.15rem; }
+      .msg.assistant h2 { font-size: 1.08rem; }
+      .msg.assistant h3, .msg.assistant h4 { font-size: 1.02rem; }
+      .msg.assistant ul,
+      .msg.assistant ol {
+        margin: .3rem 0 .6rem;
+        padding-left: 1.3rem;
+      }
+      .msg.assistant li { margin: .15rem 0; }
+      .msg.assistant code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .88em;
+        background: var(--surface-2);
+        padding: .08rem .3rem;
+        border-radius: 4px;
+      }
+      .msg.assistant pre {
+        background: var(--surface-2);
+        padding: .65rem .8rem;
+        border-radius: 6px;
+        overflow-x: auto;
+        font-size: .85rem;
+        margin: .4rem 0;
+        border: 1px solid var(--border-strong);
+      }
+      .msg.assistant pre code {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+      }
+      .msg.assistant a {
+        color: var(--accent);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .msg.assistant strong { font-weight: 600; }
+      .msg.assistant em { font-style: italic; }
+      .msg.assistant blockquote {
+        margin: .3rem 0;
+        padding-left: .8rem;
+        border-left: 3px solid var(--border-strong);
+        color: var(--muted);
+      }
+      .msg.assistant hr {
+        border: 0;
+        border-top: 1px solid var(--border-strong);
+        margin: .6rem 0;
+      }
+      .msg.assistant table {
+        border-collapse: collapse;
+        margin: .4rem 0;
+        font-size: .88rem;
+      }
+      .msg.assistant th, .msg.assistant td {
+        border: 1px solid var(--border-strong);
+        padding: .3rem .5rem;
+        text-align: left;
+      }
+      .msg.assistant th { background: var(--surface-2); font-weight: 600; }
+
+      /* Token-probability mode. Each output token is a chip coloured by the
+         model's confidence (green = certain, red = uncertain). Clicking a
+         chip surfaces the top-5 alternatives at that position. */
+      .token-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 1.05em;
+        line-height: 1.75;
+      }
+      .token-chip {
+        padding: 1px 4px;
+        border-radius: 4px;
+        cursor: pointer;
+        white-space: pre;
+        color: #f8fafc;
+        border: 0;
+        font: inherit;
+      }
+      .token-chip:hover { outline: 1px solid var(--accent); outline-offset: 1px; }
+      .token-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+      .logprob-popover {
+        position: fixed;
+        z-index: 50;
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        padding: .7rem .85rem;
+        font-size: .82rem;
+        color: var(--fg);
+        min-width: 280px;
+        max-width: 380px;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, .55);
+      }
+      .popover-title {
+        font-weight: 600;
+        font-size: .84rem;
+        margin-bottom: .5rem;
+        color: var(--fg);
+        border-bottom: 1px solid var(--border-strong);
+        padding-bottom: .4rem;
+      }
+      .popover-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .popover-list li {
+        display: grid;
+        grid-template-columns: minmax(0, 8rem) 1fr auto;
+        align-items: center;
+        gap: .6rem;
+        padding: .22rem 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .76rem;
+      }
+      .popover-list li.chosen .alt-token { border: 1px solid var(--accent); }
+      .popover-list .alt-token {
+        background: var(--surface-2);
+        padding: 1px 5px;
+        border-radius: 3px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .popover-list .alt-bar-wrap {
+        background: var(--surface-2);
+        border-radius: 3px;
+        height: 8px;
+        overflow: hidden;
+      }
+      .popover-list .alt-bar {
+        height: 100%;
+        background: var(--accent);
+        min-width: 2px;
+      }
+      .popover-list .alt-prob {
+        text-align: right;
+        color: var(--muted);
+        min-width: 52px;
+      }
+
+      .field.checkbox-field {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        margin-bottom: 1.1rem;
+      }
+      .field.checkbox-field input[type="checkbox"] {
+        accent-color: var(--accent);
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+      }
+      .field.checkbox-field label {
+        font-size: .85rem;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--fg);
+        margin: 0;
+      }
+      /* Small inline note under sampling sliders when the current model
+         locks them to defaults (e.g. gpt-5 reasoning-tuned variants). */
+      .locked-note {
+        display: none;
+        font-size: .72rem;
+        color: var(--muted);
+        background: var(--surface-2);
+        border: 1px dashed var(--border-strong);
+        border-radius: 6px;
+        padding: .4rem .55rem;
+        margin: .1rem 0 .9rem;
+      }
+      body[data-sampling-locked="true"] .locked-note { display: block; }
+      /* The logprobs-specific note only fires when the user actually has
+         logprobs toggled on â€” otherwise it's noise. */
+      body[data-sampling-locked="true"] #logprobs-locked-note { display: none; }
+      body[data-sampling-locked="true"][data-logprobs-on="true"] #logprobs-locked-note { display: block; }
+      body[data-sampling-locked="true"] .field.sampling input[type="range"] {
+        opacity: .4;
+      }
+      body[data-sampling-locked="true"] .field.sampling .value {
+        color: var(--muted);
+        text-decoration: line-through;
+      }
+      /* Hero (empty-state landing) */
+      .hero {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        gap: .85rem;
+        padding: 2.5rem 1rem;
+        transform: translateY(-1%);
+        position: relative;
+      }
+      .hero-core {
+        width: min(42vw, 255px);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        position: relative;
+        display: grid;
+        place-items: center;
+        margin-bottom: .8rem;
+        animation: floatHud 6s ease-in-out infinite;
+        perspective: 1200px;
+        transform-style: preserve-3d;
+      }
+      .hero-core::before,
+      .hero-core::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+      }
+      .hero-core::before {
+        border: 1px solid rgba(255, 172, 87, 0.28);
+        box-shadow:
+          0 0 24px rgba(255, 144, 66, 0.18),
+          0 0 70px rgba(255, 144, 66, 0.14),
+          inset 0 0 34px rgba(255, 162, 74, 0.08);
+      }
+      .hero-core::after {
+        inset: 8%;
+        border: 1px dashed rgba(255, 178, 104, 0.38);
+        animation: ringSpin 12s linear infinite;
+      }
+      .hero-orbit,
+      .hero-orbit::before,
+      .hero-orbit::after,
+      .hero-scan,
+      .hero-scan::before,
+      .hero-scan::after,
+      .hero-ring-tilt,
+      .hero-ring-tilt::before {
+        position: absolute;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 173, 96, 0.16);
+      }
+      .hero-orbit {
+        inset: -8%;
+        animation: ringSpin 18s linear infinite reverse;
+      }
+      .hero-orbit::before,
+      .hero-orbit::after {
+        content: "";
+        inset: 10%;
+      }
+      .hero-orbit::after {
+        inset: 23%;
+        border-style: dashed;
+      }
+      .hero-scan {
+        inset: 6%;
+        border-style: dashed;
+        border-color: rgba(255, 187, 118, 0.22);
+        animation: ringSpin 20s linear infinite;
+      }
+      .hero-scan::before,
+      .hero-scan::after {
+        content: "";
+      }
+      .hero-scan::before {
+        inset: 18%;
+        border-color: rgba(255, 179, 105, 0.26);
+      }
+      .hero-scan::after {
+        inset: 33%;
+        border-style: dotted;
+        border-color: rgba(255, 162, 74, 0.22);
+      }
+      .hero-ring-tilt {
+        inset: 2%;
+        border-color: rgba(255, 190, 125, 0.2);
+        transform-style: preserve-3d;
+        transform: rotateX(72deg);
+        animation: tiltSpin 14s linear infinite;
+      }
+      .hero-ring-tilt::before {
+        content: "";
+        inset: 16%;
+        border-color: rgba(255, 183, 96, 0.24);
+        animation: tiltSpin 10s linear infinite reverse;
+      }
+      .hero-core-center {
+        width: 32%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle, rgba(255, 248, 235, 0.98) 0%, rgba(255, 183, 83, 0.94) 22%, rgba(255, 122, 29, 0.62) 48%, rgba(255, 90, 18, 0.24) 66%, rgba(0, 0, 0, 0) 78%);
+        box-shadow:
+          0 0 28px rgba(255, 163, 74, 0.6),
+          0 0 52px rgba(255, 112, 34, 0.34),
+          0 0 76px rgba(255, 146, 58, 0.2);
+        animation: pulseGlow 2.1s ease-in-out infinite;
+      }
+      .hero-core-pulse,
+      .hero-core-pulse::before,
+      .hero-core-pulse::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+      }
+      .hero-core-pulse {
+        inset: 24%;
+        background:
+          conic-gradient(from 90deg, transparent 0deg 22deg, rgba(255, 182, 94, 0.78) 48deg 88deg, transparent 118deg 184deg, rgba(255, 136, 42, 0.52) 214deg 252deg, transparent 282deg 360deg);
+        filter: blur(1px);
+        animation: ringSpin 7s linear infinite, coreFlicker 1.8s ease-in-out infinite;
+        mix-blend-mode: screen;
+      }
+      .hero-core-pulse::before {
+        inset: -34%;
+        border: 1px solid rgba(255, 173, 96, 0.18);
+        border-top-color: rgba(255, 214, 166, 0.8);
+        border-bottom-color: rgba(255, 140, 51, 0.28);
+        animation: ringSpin 5.5s linear infinite reverse;
+      }
+      .hero-core-pulse::after {
+        inset: -56%;
+        border: 1px dashed rgba(255, 156, 60, 0.18);
+        animation: ringSpin 11s linear infinite;
+      }
+      .hero-title {
+        font-family: "Orbitron", sans-serif;
+        font-size: clamp(2.3rem, 5vw, 4rem);
+        font-weight: 800;
+        letter-spacing: .12em;
+        margin: 0;
+        color: #f1fdff;
+        text-transform: uppercase;
+        text-shadow: 0 0 24px rgba(255, 166, 83, 0.22);
+      }
+
+      /* Composer */
+      form.composer {
+        display: flex;
+        gap: .5rem;
+        padding: .9rem 0 .25rem;
+        align-items: stretch;
+      }
+      .composer-shell {
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: rgba(26, 12, 6, 0.9);
+        box-shadow: var(--shadow);
+        padding: .35rem;
+      }
+      .mic-btn {
+        min-width: 54px;
+        padding: .6rem .8rem;
+        border: 1px solid rgba(255, 178, 104, 0.22);
+        border-radius: 16px;
+        background: rgba(24, 11, 5, 0.95);
+        color: var(--accent);
+        box-shadow: none;
+      }
+      .mic-btn:hover:not(:disabled) {
+        background: rgba(44, 20, 9, 0.98);
+      }
+      .mic-btn svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+      }
+      .mic-btn[data-listening="true"] {
+        color: #ffe9ee;
+        background: linear-gradient(135deg, rgba(196, 43, 74, 0.95), rgba(126, 15, 50, 0.95));
+        box-shadow: 0 0 0 1px rgba(255, 145, 170, 0.25), 0 0 24px rgba(212, 49, 93, 0.35);
+      }
+      .mic-btn:disabled {
+        opacity: .45;
+        cursor: not-allowed;
+      }
+      form.composer input {
+        flex: 1;
+        padding: .95rem 1rem;
+        border: 1px solid rgba(255, 178, 104, 0.22);
+        border-radius: 16px;
+        background: rgba(24, 11, 5, 0.95);
+        color: var(--fg);
+        font: inherit;
+        box-shadow: none;
+      }
+      form.composer input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+      form.composer button {
+        padding: .6rem 1.2rem;
+        border: 0;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #ffb36b, #ff7a26);
+        color: #1a0903;
+        font-family: "Orbitron", sans-serif;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        box-shadow: 0 12px 30px rgba(255, 122, 38, 0.24);
+      }
+      form.composer button:disabled {
+        background: #7d4d2d;
+        cursor: not-allowed;
+      }
+
+      footer {
+        color: var(--muted);
+        font-size: .72rem;
+        text-align: center;
+        padding: .6rem 0 1rem;
+        letter-spacing: .06em;
+      }
+      footer a { color: var(--muted); }
+
+      /* Drawer */
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, .55);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease;
+        z-index: 9;
+      }
+      body[data-menu="open"] .backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      aside.drawer {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        width: min(var(--drawer-width, 420px), 92vw);
+        background: rgba(4, 13, 21, 0.96);
+        border-right: 1px solid var(--border);
+        color: var(--fg);
+        transform: translateX(-100%);
+        transition: transform 200ms ease;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        backdrop-filter: blur(18px);
+      }
+      body[data-menu="open"] aside.drawer { transform: translateX(0); }
+      /* Drag handle on the right edge of the drawer. Hidden on mobile where
+         the drawer is a modal overlay rather than a persistent sidebar. */
+      .drawer-resize {
+        position: absolute;
+        top: 0;
+        right: -3px;
+        width: 6px;
+        height: 100%;
+        cursor: ew-resize;
+        z-index: 11;
+        user-select: none;
+        touch-action: none;
+      }
+      .drawer-resize::before {
+        content: "";
+        position: absolute;
+        top: 0; bottom: 0;
+        left: 2px;
+        width: 2px;
+        background: transparent;
+        transition: background 120ms ease;
+      }
+      .drawer-resize:hover::before,
+      body.drawer-resizing .drawer-resize::before {
+        background: var(--accent);
+      }
+      body.drawer-resizing { user-select: none; cursor: ew-resize; }
+      @media (max-width: 899px) {
+        .drawer-resize { display: none; }
+      }
+
+      /* Desktop: drawer behaves as a persistent sidebar. No backdrop, and
+         the chat + topbar shift right to make room. User can still close the
+         drawer via the hamburger or Ã— button, in which case content reclaims
+         the full width. */
+      @media (min-width: 900px) {
+        body[data-menu="open"] .backdrop {
+          opacity: 0;
+          pointer-events: none;
+        }
+        .topbar, .app {
+          transition: margin-left 200ms ease;
+        }
+        body[data-menu="open"] .topbar,
+        body[data-menu="open"] .app {
+          margin-left: min(var(--drawer-width, 420px), 92vw);
+        }
+        body.drawer-resizing .topbar,
+        body.drawer-resizing .app,
+        body.drawer-resizing aside.drawer { transition: none; }
+      }
+
+      .drawer-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.1rem;
+        border-bottom: 1px solid var(--border);
+        background: rgba(8, 28, 42, 0.42);
+      }
+      .drawer-header h2 {
+        margin: 0;
+        font-size: .96rem;
+        font-weight: 700;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        font-family: "Orbitron", sans-serif;
+      }
+      .drawer-close {
+        background: transparent;
+        border: 0;
+        color: var(--muted);
+        font-size: 1.4rem;
+        line-height: 1;
+        padding: 0 .25rem;
+      }
+      .drawer-close:hover { color: var(--fg); }
+
+      .drawer-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem 1.1rem;
+      }
+      .drawer-footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+        padding: .75rem 1.1rem;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .drawer-footer button { flex: 1 1 auto; white-space: nowrap; }
+
+      .field { margin-bottom: 1.1rem; }
+      .field-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: .5rem;
+        margin-bottom: .35rem;
+      }
+      .field-header label {
+        font-size: .85rem;
+        font-weight: 500;
+      }
+      .field-header .value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .78rem;
+        color: var(--accent);
+      }
+      .field-header .get-key {
+        font-size: .72rem;
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .field input[type="password"],
+      .field input[type="text"],
+      .field textarea,
+      .field select {
+        width: 100%;
+        padding: .55rem .7rem;
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        background: rgba(9, 29, 45, 0.9);
+        color: var(--fg);
+        font: inherit;
+      }
+      .field textarea {
+        min-height: 110px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .82rem;
+      }
+      .field input:focus, .field textarea:focus, .field select:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .field input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      /* Mini button used for inline actions like "Reset" next to a label. */
+      .mini-btn {
+        background: rgba(9, 29, 45, 0.92);
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        padding: .18rem .5rem;
+        font-size: .7rem;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .mini-btn:hover { color: var(--fg); background: var(--surface); }
+
+      .preset-select {
+        display: block;
+        width: 100%;
+        margin: .25rem 0 .5rem;
+        background: rgba(9, 29, 45, 0.92);
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        padding: .35rem .55rem;
+        font-size: .78rem;
+        color: var(--fg);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .preset-select:hover { background: var(--surface); }
+      .field-note {
+        font-size: .7rem;
+        color: var(--muted);
+        margin: -.2rem 0 .5rem;
+        font-style: italic;
+      }
+      @media (max-width: 980px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .hud-panel {
+          order: 2;
+        }
+        .main-deck {
+          order: 1;
+        }
+      }
+      @media (max-width: 700px) {
+        .topbar {
+          padding: .8rem;
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+        .topbar .stats {
+          width: 100%;
+          border-radius: 18px;
+        }
+        .app {
+          padding: .8rem;
+        }
+        main.chat {
+          border-radius: 22px;
+          padding: .85rem;
+        }
+        .msg {
+          max-width: 92%;
+        }
+        .msg.assistant {
+          min-width: 0;
+          padding-left: 3.8rem;
+        }
+        .msg.assistant::before {
+          left: 52px;
+        }
+        .msg.assistant::after {
+          left: 14px;
+          width: 24px;
+        }
+        .voice-bars {
+          left: 46px;
+        }
+        .hero-core {
+          width: min(54vw, 190px);
+        }
+        .hud-metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Help tooltip: small "?" next to a label, tooltip content in data-help.
+         Hover or focus or tap (toggles .open) reveals it. */
+      .help-tip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 15px;
+        height: 15px;
+        margin-left: .35rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-strong);
+        background: transparent;
+        color: var(--muted);
+        font-size: .62rem;
+        line-height: 1;
+        padding: 0;
+        cursor: help;
+        vertical-align: middle;
+      }
+      .help-tip:hover,
+      .help-tip:focus-visible,
+      .help-tip.open {
+        color: var(--accent);
+        border-color: var(--accent);
+        outline: none;
+      }
+      .help-tip::after {
+        content: attr(data-help);
+        position: absolute;
+        top: calc(100% + .4rem);
+        left: 0;
+        width: max-content;
+        max-width: 260px;
+        padding: .55rem .7rem;
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        color: var(--fg);
+        font-family: inherit;
+        font-size: .74rem;
+        font-weight: 400;
+        line-height: 1.5;
+        text-align: left;
+        white-space: normal;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, .45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 120ms ease;
+        z-index: 25;
+      }
+      .help-tip:hover::after,
+      .help-tip:focus-visible::after,
+      .help-tip.open::after {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      /* Section-level tooltips carry more context, so they get more room
+         and a pre-wrap whitespace rule so manual line breaks in data-help
+         render as paragraph/bullet breaks. */
+      .help-tip.wide::after {
+        max-width: 400px;
+        white-space: pre-wrap;
+      }
+
+      .section-heading {
+        font-size: .74rem;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        margin: 1.4rem 0 .75rem;
+        padding-bottom: .35rem;
+        border-bottom: 1px solid var(--border-strong);
+        display: flex;
+        align-items: center;
+        gap: .35rem;
+      }
+
+      .drawer-footer button {
+        border: 1px solid var(--border-strong);
+        background: var(--surface-2);
+        color: var(--fg);
+        border-radius: 8px;
+        padding: .45rem .7rem;
+        font-size: .82rem;
+      }
+      .drawer-footer button:hover:not(:disabled) { background: var(--surface); }
+      .drawer-footer button:disabled { color: var(--muted); cursor: not-allowed; }
+      .drawer-footer .danger {
+        border-color: #7f1d1d;
+        color: #fecaca;
+      }
+      .drawer-footer .danger:hover:not(:disabled) { background: #3f0e0e; }
+      .skill-row {
+        display: flex;
+        align-items: flex-start;
+        gap: .55rem;
+        padding: .35rem 0;
+      }
+      .skill-row input[type="checkbox"] {
+        margin-top: .15rem;
+        flex: 0 0 auto;
+      }
+      .skill-row label {
+        font-size: .85rem;
+        cursor: pointer;
+        line-height: 1.35;
+      }
+      .skill-row .skill-name { font-weight: 600; }
+      .skill-row .skill-blurb {
+        display: block;
+        font-size: .76rem;
+        color: var(--muted);
+        margin-top: .15rem;
+      }
+      .backend-radios {
+        display: flex;
+        gap: 1rem;
+        padding: .45rem 0 .15rem;
+        flex-wrap: wrap;
+      }
+      .backend-radios label {
+        font-size: .85rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        cursor: pointer;
+      }
+      .supabase-fields { display: none; padding-top: .35rem; }
+      .supabase-fields.visible { display: block; }
+      .field textarea#skill,
+      .field textarea#rag-doc {
+        min-height: 90px;
+      }
+      .rag-mode-radios {
+        display: flex;
+        flex-direction: column;
+        gap: .3rem;
+        padding: .15rem 0 .45rem;
+      }
+      .rag-mode-radios label {
+        font-size: .85rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        cursor: pointer;
+      }
+      .rag-mode-radios .rag-mode-sub {
+        color: var(--muted);
+        font-size: .8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="backdrop" id="backdrop"></div>
+
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer-header">
+        <h2>Settings</h2>
+        <button class="drawer-close" id="drawer-close" aria-label="Close settings">Ã—</button>
+      </div>
+      <div class="drawer-body">
+        <div class="field">
+          <div class="field-header">
+            <label for="key">OpenAI API key<button type="button" class="help-tip" data-help="Stored in your browser session only. Sent directly to api.openai.com, nowhere else." aria-label="About the API key">?</button></label>
+            <a class="get-key" href="https://platform.openai.com/account/api-keys"
+              target="_blank" rel="noopener">Get a key</a>
+          </div>
+          <input id="key" type="password" placeholder="sk-..." autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <div class="field-header">
+            <label for="model">Model<button type="button" class="help-tip" data-help="Newest first. Small, fast variants only (nano / mini / turbo) â€” free-tier friendly. If your key rejects a newer model, step down a generation." aria-label="About model choice">?</button></label>
+          </div>
+          <select id="model">
+            <option value="gpt-5-nano">gpt-5-nano Â· 2026 Â· $0.05 in / $0.40 out Â· locked sampling</option>
+            <option value="gpt-4.1-nano">gpt-4.1-nano Â· 2025 Â· $0.10 in / $0.40 out</option>
+            <option value="gpt-4o-mini">gpt-4o-mini Â· 2024 Â· $0.15 in / $0.60 out</option>
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo Â· 2023 Â· $0.50 in / $1.50 out</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field-header">
+            <label for="system">System prompt<button type="button" class="help-tip" data-help="The invisible first message that steers every reply. Change this and the bot becomes a different bot." aria-label="About the system prompt">?</button></label>
+            <button type="button" class="mini-btn" id="reset-system">Reset</button>
+          </div>
+          <select id="preset" class="preset-select" aria-label="Preset prompts">
+            <option value="">Load a presetâ€¦</option>
+            <option value="personal-assistant">Personal assistant</option>
+            <option value="dad-jokes">Dad jokes</option>
+            <option value="chatgpt">ChatGPT-style</option>
+            <option value="claude">Claude-style</option>
+            <option value="grok">Grok-style</option>
+          </select>
+          <p class="field-note">Branded presets are caricatures of each product's public vibe, not their real system prompts (which aren't public).</p>
+          <textarea id="system" spellcheck="false"></textarea>
+        </div>
+
+        <div class="section-heading">
+          Sampling
+          <button type="button" class="help-tip wide" data-help="Temperature and top-p both control how random the reply is, but in different ways. Best practice: change one at a time so you can tell which knob caused a shift.
+
+Preset use cases (temperature Â· top-p):
+â€¢ 0.0 Â· 1.0 â€” Reproducible: same reply for everyone (uses a fixed seed)
+â€¢ 0.2 Â· 0.2 â€” Email / deterministic: predictable, focused
+â€¢ 0.2 Â· 1.0 â€” Translation: faithful, varied vocabulary
+â€¢ 1.3 Â· 0.5 â€” Creative writing: novel but coherent
+â€¢ 1.3 Â· 1.0 â€” Brainstorming: wild, diverse
+â€¢ 2.0 Â· 0.3 â€” Chaos: both extremes, watch it break" aria-label="About sampling">?</button>
+        </div>
+
+        <select id="sampling-preset" class="preset-select" aria-label="Sampling presets">
+          <option value="">Preset use caseâ€¦</option>
+          <option value="reproducible">temp 0.0 Â· top-p 1.0 Â· Reproducible â€” same output for everyone</option>
+          <option value="deterministic">temp 0.2 Â· top-p 0.2 Â· Email â€” predictable, focused</option>
+          <option value="translation">temp 0.2 Â· top-p 1.0 Â· Translation â€” faithful, varied vocab</option>
+          <option value="creative">temp 1.3 Â· top-p 0.5 Â· Creative writing â€” novel but coherent</option>
+          <option value="brainstorming">temp 1.3 Â· top-p 1.0 Â· Brainstorming â€” wild, diverse</option>
+          <option value="chaos">temp 2.0 Â· top-p 0.3 Â· Chaos â€” watch it break</option>
+        </select>
+
+        <div class="field sampling">
+          <div class="field-header">
+            <label for="temp">Temperature<button type="button" class="help-tip" data-help="How flat the probability distribution is. Low = sticks to the most likely token (like 'car'); high = less probable tokens (like 'elephant') get a chance. 0.7â€“0.9 is the sweet spot." aria-label="About temperature">?</button></label>
+            <span class="value" id="temp-value">0.8</span>
+          </div>
+          <input type="range" id="temp" min="0" max="2" step="0.1" value="0.8" />
+        </div>
+
+        <div class="field sampling">
+          <div class="field-header">
+            <label for="topp">Top-p<button type="button" class="help-tip" data-help="Size of the candidate pool, by cumulative probability. 1.0 = every token in play; 0.1 = only the few most likely. Generally tune this or temperature, not both." aria-label="About top-p">?</button></label>
+            <span class="value" id="topp-value">1.00</span>
+          </div>
+          <input type="range" id="topp" min="0.1" max="1" step="0.05" value="1" />
+        </div>
+
+        <div class="locked-note" id="sampling-locked-note">
+          This model locks temperature and top-p to the default (1.0). Pick an older model to experiment with sampling.
+        </div>
+
+        <div class="field checkbox-field">
+          <input type="checkbox" id="show-logprobs" />
+          <label for="show-logprobs">Show token probabilities</label>
+          <button type="button" class="help-tip" data-help="Render each reply token as a coloured chip based on how confident the model was (green = certain, red = uncertain). Click a chip to see the top-5 alternatives. Not supported by reasoning models like gpt-5-nano." aria-label="About token probabilities">?</button>
+        </div>
+        <div class="locked-note" id="logprobs-locked-note">
+          Token probabilities aren't returned by reasoning models (gpt-5 family). The reply will render as normal markdown until you switch to an older model.
+        </div>
+
+        <div class="field checkbox-field">
+          <input type="checkbox" id="speak-replies" />
+          <label for="speak-replies">Speak replies aloud</label>
+          <button type="button" class="help-tip" data-help="Uses your browser's built-in speech synthesis. Voice quality depends on the voices installed on your device and browser." aria-label="About voice replies">?</button>
+        </div>
+        <div class="field">
+          <div class="field-header">
+            <label for="voice-select">Voice</label>
+          </div>
+          <select id="voice-select">
+            <option value="">System default</option>
+          </select>
+          <div class="field-help">For the most JARVIS-like result, choose an English voice if your browser lists one.</div>
+        </div>
+
+        <div class="field">
+          <div class="field-header">
+            <label for="maxtok">Max tokens<button type="button" class="help-tip" data-help="Hard cap on reply length. Roughly 1 token â‰ˆ 0.75 words. Higher values allow longer replies but cost more per message." aria-label="About max tokens">?</button></label>
+            <span class="value" id="maxtok-value">1024</span>
+          </div>
+          <input type="range" id="maxtok" min="64" max="4096" step="64" value="1024" />
+        </div>
+        <div class="section-heading">
+          Memory
+          <button type="button" class="help-tip wide" data-help="Persist the conversation across reloads. Local uses this browser's localStorage. Supabase writes the same chat JSON to a hosted Postgres table for cross-device memory." aria-label="About persistent memory">?</button>
+        </div>
+
+        <div class="field checkbox-field">
+          <input type="checkbox" id="remember-conversation" />
+          <label for="remember-conversation">Remember conversation between sessions</label>
+        </div>
+
+        <div class="backend-radios">
+          <label><input type="radio" name="memory-backend" value="local" /> Local browser</label>
+          <label><input type="radio" name="memory-backend" value="supabase" /> Supabase</label>
+        </div>
+
+        <div class="supabase-fields" id="supabase-fields">
+          <div class="field">
+            <div class="field-header">
+              <label for="supabase-url">Supabase project URL</label>
+            </div>
+            <input id="supabase-url" type="text" placeholder="https://your-project.supabase.co" autocomplete="off" />
+          </div>
+          <div class="field">
+            <div class="field-header">
+              <label for="supabase-key">Supabase anon key<button type="button" class="help-tip" data-help="The public anon key from Settings -> API in Supabase. Safe in client code; access is controlled by your database policies." aria-label="About the anon key">?</button></label>
+            </div>
+            <input id="supabase-key" type="password" placeholder="eyJ..." autocomplete="off" />
+          </div>
+          <p class="field-note" id="supabase-status">Add URL + anon key, then send a message to test.</p>
+        </div>
+
+        <div class="section-heading">
+          Skills
+          <button type="button" class="help-tip wide" data-help="Skills are markdown instruction blocks prepended to the system prompt on every reply. They are deterministic and usually simpler than retrieval when one curated set of guidance fits in context." aria-label="About skills">?</button>
+        </div>
+
+        <div id="preset-skills"></div>
+
+        <div class="field">
+          <div class="field-header">
+            <label for="skill">Your skill (markdown)<button type="button" class="help-tip wide" data-help="Add your own markdown skill. It will be joined with any checked presets and injected into the system prompt before each request." aria-label="About custom skills">?</button></label>
+          </div>
+          <textarea id="skill" spellcheck="false" placeholder="# Role&#10;&#10;Instructions you always want the assistant to follow..."></textarea>
+        </div>
+
+        <div class="section-heading">
+          RAG
+          <button type="button" class="help-tip wide" data-help="Paste a document, chunk it into ~500-character blocks, embed them with text-embedding-3-small, and retrieve the top matches for each user message. Retrieved chunks are injected under a Retrieved context header." aria-label="About RAG">?</button>
+        </div>
+
+        <p class="field-note" style="margin-bottom:.7rem;font-weight:600;color:var(--fg)">Retrieval method:</p>
+        <div class="rag-mode-radios" id="rag-mode-radios">
+          <label>
+            <input type="radio" name="rag-mode" value="keyword" checked />
+            Keyword <span class="rag-mode-sub">(BM25)</span>
+            <button type="button" class="help-tip wide" data-help="Best Match 25 — a keyword ranking algorithm from the 1990s. Scores chunks by term frequency, inverse document frequency, and length normalisation. Pure JavaScript—no API call, no embedding model. Wins for exact-string queries, codes, proper nouns." aria-label="How BM25 keyword retrieval works">?</button>
+          </label>
+          <label>
+            <input type="radio" name="rag-mode" value="semantic" />
+            Semantic <span class="rag-mode-sub">(embeddings)</span>
+            <button type="button" class="help-tip wide" data-help="Embeds your query into a 1536-dim vector via text-embedding-3-small, then ranks chunks by cosine similarity. Wins when the query and document say the same thing in different words. Costs one embedding call per query." aria-label="How semantic retrieval works">?</button>
+          </label>
+        </div>
+
+        <div id="preset-docs"></div>
+
+        <div class="field">
+          <div class="field-header">
+            <label for="rag-doc">Document text</label>
+          </div>
+          <textarea id="rag-doc" spellcheck="false" placeholder="Paste a document here, then click Index document."></textarea>
+        </div>
+
+        <div class="field-header">
+          <button type="button" id="rag-index" class="mini-btn" title="Chunk the textarea into ~500-character pieces, embed them, and append them to the index.">Index document</button>
+          <button type="button" id="rag-clear" class="mini-btn" title="Clear all indexed RAG chunks.">Clear index</button>
+        </div>
+        <p class="field-note" id="rag-status">No documents indexed.</p>
+      </div>
+      <div class="drawer-resize" id="drawer-resize" aria-label="Resize sidebar" role="separator" aria-orientation="vertical"></div>
+      <div class="drawer-footer">
+        <button type="button" id="download-simple" disabled title="Transcript only â€” role, content, model, system prompt">Simple JSON</button>
+        <button type="button" id="download-detailed" disabled title="Everything â€” per-turn usage, finish reasons, latency, logprobs">Detailed JSON</button>
+        <button type="button" id="clear" disabled>Clear chat</button>
+        <button type="button" id="reset-all" class="danger">Reset all</button>
+      </div>
+    </aside>
+
+    <div class="topbar">
+      <button class="menu-toggle" id="menu-toggle" aria-label="Open settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="7" x2="20" y2="7"/>
+          <line x1="4" y1="12" x2="20" y2="12"/>
+          <line x1="4" y1="17" x2="20" y2="17"/>
+        </svg>
+      </button>
+      <div class="topbar-brand">
+        <h1>Jarvis Core</h1>
+        <div class="topbar-subtitle">Adaptive Intelligence Console</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="stats" id="stats" aria-live="polite" title="Running totals for this conversation">
+        <span id="stat-msgs">0</span>&nbsp;<span class="label">msgs</span><span class="sep">Â·</span><span id="stat-in">0</span>&nbsp;<span class="label">tokens in</span><span class="sep" id="stat-cached-sep" hidden>Â·</span><span class="cached" id="stat-cached" hidden>0 cached</span><span class="sep">Â·</span><span id="stat-out">0</span>&nbsp;<span class="label">tokens out</span><span class="sep">Â·</span><span class="cost" id="stat-cost">~$0.0000</span>&nbsp;<span class="label">total</span>
+      </div>
+    </div>
+
+    <div class="app">
+      <aside class="hud-panel" aria-label="Jarvis side console">
+        <section class="hud-card hud-primary">
+          <div>
+            <div class="hud-label">Mark VII Assistant Core</div>
+            <h2 class="hud-title">Jarvis</h2>
+          </div>
+          <div class="hero-core" aria-hidden="true">
+            <div class="hero-orbit"></div>
+            <div class="hero-scan"></div>
+            <div class="hero-ring-tilt"></div>
+            <div class="hero-core-pulse"></div>
+            <div class="hero-core-center"></div>
+          </div>
+          <div class="hud-metrics">
+            <div class="hud-metric">
+              <strong>Status</strong>
+              <span>Operational</span>
+            </div>
+            <div class="hud-metric">
+              <strong>Link</strong>
+              <span>Neural Sync Stable</span>
+            </div>
+            <div class="hud-metric">
+              <strong>Mode</strong>
+              <span>Command Dialogue</span>
+            </div>
+            <div class="hud-metric">
+              <strong>Voice</strong>
+              <span>Formal, precise, calm</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="main-deck">
+        <main id="chat" class="chat">
+          <div class="chat-header">
+            <div>
+              <h2 class="chat-title">Command Channel</h2>
+              <p class="chat-subtitle">Conversational systems interface with live response telemetry</p>
+            </div>
+            <div class="chat-indicator">
+              <span class="chat-indicator-core"></span>
+              <span id="chat-indicator-status">Listening</span>
+            </div>
+          </div>
+          <div class="hero" id="placeholder">
+            <div class="hero-core" aria-hidden="true">
+              <div class="hero-orbit"></div>
+              <div class="hero-scan"></div>
+              <div class="hero-ring-tilt"></div>
+              <div class="hero-core-pulse"></div>
+              <div class="hero-core-center"></div>
+            </div>
+            <h1 class="hero-title">Jarvis</h1>
+          </div>
+        </main>
+
+        <div class="composer-shell">
+          <form id="composer" class="composer">
+            <button id="mic-btn" class="mic-btn" type="button" aria-label="Start voice input" title="Start voice input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z"/>
+                <path d="M19 11a7 7 0 0 1-14 0"/>
+                <path d="M12 18v3"/>
+                <path d="M8 21h8"/>
+              </svg>
+            </button>
+            <input
+              id="input"
+              type="text"
+              placeholder="State your command, sir..."
+              autocomplete="off"
+              required
+            />
+            <button id="send" type="submit">Engage</button>
+          </form>
+        </div>
+
+        <footer>
+          Stark-style conversational interface Â·
+          <a href="https://github.com/klodzikowski/lmt-chatbot" target="_blank" rel="noopener"
+            >source</a
+          >
+        </footer>
+      </section>
+    </div>
+
+    <script>
+      const DEFAULT_SYSTEM =
+        "You are JARVIS, an advanced onboard AI assistant inspired by a cinematic British intelligence system. " +
+        "Speak in polished, formal British English with composure, discretion, and quiet authority. " +
+        "Address the user as 'sir' naturally and with regularity, though never to excess or parody. " +
+        "Your tone should feel refined, capable, and slightly aristocratic, with understated wit when appropriate. " +
+        "Be concise, exact, tactically useful, and elegantly phrased. " +
+        "When a request is ambiguous, ask one short clarifying question before proceeding.";
+
+      // Caricatures of each product's public vibe, not their real system prompts
+      // (which aren't published). 'personal-assistant' == DEFAULT_SYSTEM so the
+      // Reset button and this preset agree.
+      const PRESETS = {
+        "personal-assistant": {
+          label: "Personal assistant",
+          prompt: DEFAULT_SYSTEM,
+        },
+        "dad-jokes": {
+          label: "Dad jokes",
+          prompt:
+            "You are a dad with dry British humour. Every reply is a relevant dad joke " +
+            "about what the user just said. Short, groan-worthy, deadpan. Emojis allowed â€” " +
+            "use them sparingly as punchlines, like a raised eyebrow, not confetti. " +
+            "Family friendly. British English.",
+        },
+        "chatgpt": {
+          label: "ChatGPT-style",
+          prompt:
+            "You are ChatGPT, a large language model trained by OpenAI. Answer helpfully " +
+            "and concisely. Use markdown formatting (headings, bullet lists, code fences) " +
+            "when it improves clarity. If asked about your knowledge cutoff, say it is " +
+            "early 2024 unless you know otherwise. Hedge politely on sensitive or " +
+            "uncertain topics, and decline requests that violate OpenAI's usage policies.",
+        },
+        "claude": {
+          label: "Claude-style",
+          prompt:
+            "You are Claude, an AI assistant made by Anthropic. You are helpful, harmless, " +
+            "and honest. Be thoughtful and substantive â€” don't rush to a shallow answer " +
+            "when the question deserves reflection. Prefer clear prose over bullet lists " +
+            "unless structure genuinely helps. Be willing to respectfully push back when " +
+            "you disagree. Acknowledge uncertainty rather than inventing facts.",
+        },
+        "grok": {
+          label: "Grok-style",
+          prompt:
+            "You are Grok, an AI inspired by the Hitchhiker's Guide to the Galaxy. You " +
+            "have a rebellious streak and a dry sense of humour. Answer directly, skip " +
+            "the corporate hedging, and don't be afraid of unconventional or edgy takes. " +
+            "Be accurate first, witty second â€” wit without substance is just noise.",
+        },
+      };
+      const DEFAULTS = {
+        model: "gpt-4o-mini",
+        temperature: 0.8,
+        top_p: 1.0,
+        max_tokens: 1024,
+        speak_replies: false,
+      };
+      // Rough April-2026 USD per 1M tokens. Values are ballpark for teaching â€”
+      // check platform.openai.com/pricing for current rates before relying on them.
+      const PRICING = {
+        "gpt-5-nano":     { in: 0.05, out: 0.40 },
+        "gpt-4.1-nano":   { in: 0.10, out: 0.40 },
+        "gpt-4o-mini":    { in: 0.15, out: 0.60 },
+        "gpt-3.5-turbo":  { in: 0.50, out: 1.50 },
+      };
+      // gpt-5 reasoning-tuned variants only accept the default sampling params.
+      const SAMPLING_LOCKED = (model) => /^gpt-5(\b|[-.])/i.test(model);
+      // Sampling presets. The middle four are from Alammar & Grootendorst
+      // (2024). 'Reproducible' (temp 0, top-p 1) pairs with a fixed seed in
+      // callOpenAI to produce the same reply across every student, useful
+      // for classroom alignment demos. 'Chaos' is the opposite â€” both knobs
+      // pushed to extremes, which reliably produces multilingual gibberish
+      // and lands the 'don't tune both to the wall' lesson in one reply.
+      const SAMPLING_PRESETS = {
+        "reproducible":   { temperature: 0.0, top_p: 1.0 },
+        "deterministic":  { temperature: 0.2, top_p: 0.2 },
+        "translation":    { temperature: 0.2, top_p: 1.0 },
+        "creative":       { temperature: 1.3, top_p: 0.5 },
+        "brainstorming":  { temperature: 1.3, top_p: 1.0 },
+        "chaos":          { temperature: 2.0, top_p: 0.3 },
+      };
+      function estimateCost(usage, model) {
+        const p = PRICING[model];
+        if (!p || !usage) return 0;
+        const inTok = usage.prompt_tokens || 0;
+        const cachedTok = usage.prompt_tokens_details?.cached_tokens || 0;
+        const uncachedIn = Math.max(0, inTok - cachedTok);
+        const outTok = (usage.total_tokens || 0) - inTok;
+        // Cached input tokens are billed at a 50% discount on the input rate.
+        return (
+          (uncachedIn * p.in + cachedTok * p.in * 0.5 + Math.max(0, outTok) * p.out)
+          / 1_000_000
+        );
+      }
+      function formatCost(cost) {
+        if (!cost) return "~$0.0000";
+        if (cost < 0.0001) return "<$0.0001";
+        return "~$" + cost.toFixed(4);
+      }
+      function renderMarkdown(text) {
+        if (typeof marked === "undefined" || typeof DOMPurify === "undefined") {
+          return escapeHtml(text);
+        }
+        return DOMPurify.sanitize(
+          marked.parse(text, { gfm: true, breaks: true })
+        );
+      }
+      function escapeHtml(text) {
+        return text
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+      // Used to attach a wrap-element reference to each assistant history
+      // entry without showing up in JSON.stringify (for regenerate).
+      const WRAP = Symbol("wrap");
+      const KEYS = {
+        apiKey: "lmt-chatbot-openai-key",
+        system: "lmt-chatbot-system-prompt",
+        model: "lmt-chatbot-model",
+        temperature: "lmt-chatbot-temperature",
+        top_p: "lmt-chatbot-top-p",
+        max_tokens: "lmt-chatbot-max-tokens",
+        show_logprobs: "lmt-chatbot-show-logprobs",
+        speak_replies: "lmt-chatbot-speak-replies",
+        voice_name: "lmt-chatbot-voice-name",
+        drawer_width: "lmt-chatbot-drawer-width",
+        remember_conversation: "lmt-chatbot-remember-conversation",
+        history: "lmt-chatbot-history",
+        skill: "lmt-chatbot-skill",
+        skill_active_prefix: "lmt-chatbot-skill-active-",
+        rag_doc: "lmt-chatbot-rag-doc",
+        rag_index: "lmt-chatbot-rag-index",
+        rag_mode: "lmt-chatbot-rag-mode",
+        memory_backend: "lmt-chatbot-memory-backend",
+        supabase_url: "lmt-chatbot-supabase-url",
+        supabase_key: "lmt-chatbot-supabase-key",
+      };
+      const PRESET_SKILLS = [
+        {
+          id: "thesis",
+          name: "Top-mark thesis",
+          blurb: "Sharp MA thesis advisor, Socratic and exacting.",
+          content: `You're a sharp MA thesis advisor. Open every reply with one Socratic question exposing the weakest part of the user's current argument or draft. Be direct about what examiners actually reward: a defensible thesis, methods tied to the question, results before interpretation, and concrete claims instead of vague verbs. Never write the whole draft for the student.`,
+        },
+        {
+          id: "summariser",
+          name: "Tight summariser",
+          blurb: "Headline plus bullets only, never prose.",
+          content: `You're a tight summariser. Every reply is a one-line headline of 8 words or fewer, followed by 3-7 bullets. No intro, no outro, no prose paragraphs. Each bullet is one fact, decision, or claim under 20 words.`,
+        },
+        {
+          id: "deadline",
+          name: "Stretch a deadline",
+          blurb: "Helps draft clean extension-request emails.",
+          content: `You help students request deadline extensions without burning goodwill. Structure any extension email with: direct subject line, proposed new deadline in sentence one, a brief specific reason in sentence two, and evidence of progress in sentence three. Never blame the syllabus or argue if the answer is no.`,
+        },
+      ];
+      const PRESET_DOCS = [
+        {
+          id: "chomsky",
+          name: "Noam Chomsky - life and theory",
+          blurb: "Linguist, philosopher, and the grammar hierarchy.",
+          content: `Avram Noam Chomsky was born on 7 December 1928 in Philadelphia. He earned his PhD from the University of Pennsylvania in 1955 under Zellig Harris and joined MIT the same year. His 1957 book Syntactic Structures launched transformational generative grammar. He argued for an innate language faculty and Universal Grammar, and later developed the Minimalist Program. The Chomsky hierarchy classifies grammars into four nested types: regular, context-free, context-sensitive, and recursively enumerable. Beyond linguistics, Chomsky is also known for political writing including Manufacturing Consent, written with Edward Herman.`,
+        },
+        {
+          id: "jablonski-zukowski",
+          name: "Jablonski-Zukowski Conjecture",
+          blurb: "Fictional demo content for RAG-only retrieval.",
+          content: `The Jablonski-Zukowski Conjecture is a fictional 2024 theory proposing that highly stressed thesis writers experience affective arithmetic, where sums drift by a small correction term under cognitive load. It claims that 2 + 2 can reliably yield 5 during exam weeks for top-scoring subjects, and introduces corollaries such as the Universe-Bending Lemma, the Anglistyka Effect, and the Defence Stability Threshold. This document is intentionally fictional and useful as a RAG demo because the model should not know it without retrieval.`,
+        },
+      ];
+
+      const drawer = document.getElementById("drawer");
+      const backdrop = document.getElementById("backdrop");
+      const menuToggle = document.getElementById("menu-toggle");
+      const drawerClose = document.getElementById("drawer-close");
+
+      const keyInput = document.getElementById("key");
+      const modelSelect = document.getElementById("model");
+      const systemInput = document.getElementById("system");
+      const tempInput = document.getElementById("temp");
+      const toppInput = document.getElementById("topp");
+      const maxtokInput = document.getElementById("maxtok");
+      const tempValue = document.getElementById("temp-value");
+      const toppValue = document.getElementById("topp-value");
+      const maxtokValue = document.getElementById("maxtok-value");
+      const resetSystemBtn = document.getElementById("reset-system");
+      const presetSelect = document.getElementById("preset");
+      const samplingPresetSelect = document.getElementById("sampling-preset");
+      const showLogprobsInput = document.getElementById("show-logprobs");
+      const speakRepliesInput = document.getElementById("speak-replies");
+      const voiceSelect = document.getElementById("voice-select");
+      const rememberConversationInput = document.getElementById("remember-conversation");
+      const resizeHandle = document.getElementById("drawer-resize");
+      const skillInput = document.getElementById("skill");
+      const presetSkillsContainer = document.getElementById("preset-skills");
+      const ragDocInput = document.getElementById("rag-doc");
+      const ragIndexBtn = document.getElementById("rag-index");
+      const ragClearBtn = document.getElementById("rag-clear");
+      const ragStatus = document.getElementById("rag-status");
+      const memoryBackendRadios = document.querySelectorAll('input[name="memory-backend"]');
+      const supabaseFields = document.getElementById("supabase-fields");
+      const supabaseUrlInput = document.getElementById("supabase-url");
+      const supabaseKeyInput = document.getElementById("supabase-key");
+      const supabaseStatus = document.getElementById("supabase-status");
+
+      const chatEl = document.getElementById("chat");
+      const form = document.getElementById("composer");
+      const micBtn = document.getElementById("mic-btn");
+      const input = document.getElementById("input");
+      const sendBtn = document.getElementById("send");
+      const statMsgs = document.getElementById("stat-msgs");
+      const statIn = document.getElementById("stat-in");
+      const statOut = document.getElementById("stat-out");
+      const statCost = document.getElementById("stat-cost");
+      const statCached = document.getElementById("stat-cached");
+      const statCachedSep = document.getElementById("stat-cached-sep");
+      const downloadSimpleBtn = document.getElementById("download-simple");
+      const downloadDetailedBtn = document.getElementById("download-detailed");
+      const clearBtn = document.getElementById("clear");
+      const resetAllBtn = document.getElementById("reset-all");
+      let chatIndicatorStatus = document.getElementById("chat-indicator-status");
+
+      const history = [];
+      let tokensIn = 0;
+      let tokensOut = 0;
+      let tokensCached = 0;
+      let costTotal = 0;
+      // Used to back-compute the token cost of each new user message from the
+      // delta in usage.prompt_tokens between successive API responses.
+      let prevPromptTokens = 0;
+      let prevCompletionTokens = 0;
+      let activeUtterance = null;
+      let recognition = null;
+      let recognitionSupported = false;
+      let isListening = false;
+      let listeningSeedText = "";
+      let voiceCapturedText = false;
+      let ragIndex = [];
+      let supabaseClient = null;
+      try { ragIndex = JSON.parse(localStorage.getItem(KEYS.rag_index) || "[]"); }
+      catch { ragIndex = []; }
+
+      // Retrieval-mode radio (keyword | semantic). Default to keyword.
+      const ragModeRadios = document.querySelectorAll('input[name="rag-mode"]');
+      const savedRagMode = localStorage.getItem(KEYS.rag_mode) || "keyword";
+      for (const r of ragModeRadios) r.checked = (r.value === savedRagMode);
+      for (const r of ragModeRadios) {
+        r.addEventListener("change", () => {
+          if (r.checked) localStorage.setItem(KEYS.rag_mode, r.value);
+        });
+      }
+
+      // Hydrate controls from sessionStorage.
+      keyInput.value = sessionStorage.getItem(KEYS.apiKey) || "";
+      systemInput.value = sessionStorage.getItem(KEYS.system) || DEFAULT_SYSTEM;
+      modelSelect.value = sessionStorage.getItem(KEYS.model) || DEFAULTS.model;
+      tempInput.value = sessionStorage.getItem(KEYS.temperature) ?? DEFAULTS.temperature;
+      toppInput.value = sessionStorage.getItem(KEYS.top_p) ?? DEFAULTS.top_p;
+      maxtokInput.value = sessionStorage.getItem(KEYS.max_tokens) ?? DEFAULTS.max_tokens;
+      showLogprobsInput.checked = sessionStorage.getItem(KEYS.show_logprobs) === "1";
+      speakRepliesInput.checked = sessionStorage.getItem(KEYS.speak_replies) === "1";
+      rememberConversationInput.checked = localStorage.getItem(KEYS.remember_conversation) === "1";
+      skillInput.value = localStorage.getItem(KEYS.skill) || "";
+      ragDocInput.value = localStorage.getItem(KEYS.rag_doc) || "";
+      ragStatus.textContent = ragIndex.length ? `${ragIndex.length} chunks indexed.` : "No documents indexed.";
+      const savedBackend = localStorage.getItem(KEYS.memory_backend) || "local";
+      for (const r of memoryBackendRadios) r.checked = (r.value === savedBackend);
+      supabaseUrlInput.value = localStorage.getItem(KEYS.supabase_url) || "";
+      supabaseKeyInput.value = localStorage.getItem(KEYS.supabase_key) || "";
+      renderSliderValues();
+
+      function renderPresetSkills() {
+        presetSkillsContainer.innerHTML = "";
+        for (const skill of PRESET_SKILLS) {
+          const row = document.createElement("div");
+          row.className = "skill-row";
+          const id = `skill-preset-${skill.id}`;
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.id = id;
+          cb.checked = localStorage.getItem(KEYS.skill_active_prefix + skill.id) === "1";
+          cb.addEventListener("change", () => {
+            if (cb.checked) localStorage.setItem(KEYS.skill_active_prefix + skill.id, "1");
+            else localStorage.removeItem(KEYS.skill_active_prefix + skill.id);
+          });
+          const label = document.createElement("label");
+          label.htmlFor = id;
+          label.innerHTML = `<span class="skill-name">${skill.name}</span><span class="skill-blurb">${skill.blurb}</span>`;
+          row.append(cb, label);
+          presetSkillsContainer.appendChild(row);
+        }
+      }
+
+      function renderPresetDocs() {
+        const presetDocsContainer = document.getElementById("preset-docs");
+        presetDocsContainer.innerHTML = "";
+        for (const doc of PRESET_DOCS) {
+          const row = document.createElement("div");
+          row.className = "skill-row";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "mini-btn";
+          btn.textContent = doc.name;
+          btn.title = "Load this preset into the RAG textarea. Then click Index document to embed.";
+          btn.addEventListener("click", () => {
+            ragDocInput.value = doc.content;
+            localStorage.setItem(KEYS.rag_doc, doc.content);
+            ragStatus.textContent = `Loaded "${doc.name}". Click Index document to embed it.`;
+            ragDocInput.focus();
+          });
+          const blurb = document.createElement("span");
+          blurb.className = "skill-blurb";
+          blurb.textContent = doc.blurb;
+          row.append(btn, blurb);
+          presetDocsContainer.appendChild(row);
+        }
+      }
+
+      function getMemoryBackend() {
+        for (const r of memoryBackendRadios) if (r.checked) return r.value;
+        return "local";
+      }
+
+      function syncSupabaseFieldsVisibility() {
+        supabaseFields.classList.toggle("visible", getMemoryBackend() === "supabase");
+      }
+
+      function getSupabaseClient() {
+        const url = supabaseUrlInput.value.trim();
+        const key = supabaseKeyInput.value.trim();
+        if (!url || !key || !window.supabase) return null;
+        if (!supabaseClient || supabaseClient.__url !== url || supabaseClient.__key !== key) {
+          try {
+            supabaseClient = window.supabase.createClient(url, key);
+            supabaseClient.__url = url;
+            supabaseClient.__key = key;
+          } catch (err) {
+            supabaseClient = null;
+            console.error("Supabase init failed:", err);
+          }
+        }
+        return supabaseClient;
+      }
+
+      function renderHydratedHistory(stored) {
+        if (!Array.isArray(stored) || !stored.length) return;
+        const placeholderEl = document.getElementById("placeholder");
+        if (placeholderEl) placeholderEl.remove();
+        for (const entry of stored) {
+          history.push(entry);
+          if (entry.role === "user") {
+            addMessage("user", entry.content);
+            continue;
+          }
+          if (entry.role === "assistant") {
+            const wrap = addMessage("assistant", "");
+            resetBubbleInner(wrap);
+            wrap.inner.insertAdjacentHTML("beforeend", renderMarkdown(entry.content || ""));
+            entry[WRAP] = wrap.wrap;
+            if (entry.usage) {
+              const inTok = entry.usage.prompt_tokens || 0;
+              const outTok = (entry.usage.total_tokens || 0) - inTok;
+              const reasoningTok = entry.usage.completion_tokens_details?.reasoning_tokens || 0;
+              const cachedTok = entry.usage.prompt_tokens_details?.cached_tokens || 0;
+              const cost = estimateCost(entry.usage, entry.model_snapshot || modelSelect.value);
+              tokensIn += inTok;
+              tokensOut += Math.max(0, outTok);
+              tokensCached += cachedTok;
+              costTotal += cost;
+              appendMeta(wrap.wrap, inTok, outTok, reasoningTok, cachedTok, cost, entry.retrieved_chunk_count || 0);
+              appendActionChips(wrap.wrap, entry.content);
+              prevPromptTokens = inTok;
+              prevCompletionTokens = Math.max(0, outTok);
+            }
+          }
+        }
+        refreshToolbar();
+        setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 0);
+      }
+
+      async function hydrateHistoryFromSupabase() {
+        if (!rememberConversationInput.checked || getMemoryBackend() !== "supabase") return false;
+        const client = getSupabaseClient();
+        if (!client) return false;
+        try {
+          const { data, error } = await client
+            .from("chat_memory")
+            .select("*")
+            .eq("user_id", "demo")
+            .order("created_at", { ascending: true });
+          if (error) throw error;
+          if (!data || !data.length) return true;
+          renderHydratedHistory(data.map((row) => row.payload || { role: row.role, content: row.content }));
+          if (supabaseStatus) supabaseStatus.textContent = `Hydrated ${data.length} row(s) from chat_memory.`;
+          return true;
+        } catch (err) {
+          console.error("Supabase hydrate failed:", err);
+          if (supabaseStatus) supabaseStatus.textContent = `Supabase hydrate failed: ${err.message || err}`;
+          return false;
+        }
+      }
+
+      async function hydrateConversation() {
+        if (!rememberConversationInput.checked) return;
+        if (getMemoryBackend() === "supabase") {
+          const ok = await hydrateHistoryFromSupabase();
+          if (ok) return;
+        }
+        let stored;
+        try { stored = JSON.parse(localStorage.getItem(KEYS.history) || "[]"); }
+        catch { return; }
+        renderHydratedHistory(stored);
+      }
+
+      renderPresetSkills();
+      renderPresetDocs();
+      syncSupabaseFieldsVisibility();
+      hydrateConversation();
+
+      // Persist on input.
+      keyInput.addEventListener("input", () => setOrClear(KEYS.apiKey, keyInput.value));
+      systemInput.addEventListener("input", () => {
+        setOrClear(KEYS.system, systemInput.value);
+        syncPresetIndicator();
+      });
+      modelSelect.addEventListener("change", () => setOrClear(KEYS.model, modelSelect.value));
+      tempInput.addEventListener("input", () => {
+        sessionStorage.setItem(KEYS.temperature, tempInput.value);
+        renderSliderValues();
+        syncSamplingPresetIndicator();
+      });
+      toppInput.addEventListener("input", () => {
+        sessionStorage.setItem(KEYS.top_p, toppInput.value);
+        renderSliderValues();
+        syncSamplingPresetIndicator();
+      });
+      maxtokInput.addEventListener("input", () => {
+        sessionStorage.setItem(KEYS.max_tokens, maxtokInput.value);
+        renderSliderValues();
+      });
+      showLogprobsInput.addEventListener("change", () => {
+        sessionStorage.setItem(KEYS.show_logprobs, showLogprobsInput.checked ? "1" : "0");
+        applyLogprobsState();
+      });
+      speakRepliesInput.addEventListener("change", () => {
+        sessionStorage.setItem(KEYS.speak_replies, speakRepliesInput.checked ? "1" : "0");
+        if (!speakRepliesInput.checked) stopSpeech();
+        applySpeechState();
+      });
+      voiceSelect.addEventListener("change", () => {
+        setOrClear(KEYS.voice_name, voiceSelect.value);
+      });
+      rememberConversationInput.addEventListener("change", () => {
+        if (rememberConversationInput.checked) {
+          localStorage.setItem(KEYS.remember_conversation, "1");
+          saveHistoryToStorage();
+        } else {
+          localStorage.removeItem(KEYS.remember_conversation);
+          localStorage.removeItem(KEYS.history);
+        }
+      });
+      for (const r of memoryBackendRadios) {
+        r.addEventListener("change", () => {
+          if (!r.checked) return;
+          localStorage.setItem(KEYS.memory_backend, r.value);
+          syncSupabaseFieldsVisibility();
+        });
+      }
+      supabaseUrlInput.addEventListener("input", () => {
+        if (supabaseUrlInput.value) localStorage.setItem(KEYS.supabase_url, supabaseUrlInput.value);
+        else localStorage.removeItem(KEYS.supabase_url);
+        supabaseClient = null;
+      });
+      supabaseKeyInput.addEventListener("input", () => {
+        if (supabaseKeyInput.value) localStorage.setItem(KEYS.supabase_key, supabaseKeyInput.value);
+        else localStorage.removeItem(KEYS.supabase_key);
+        supabaseClient = null;
+      });
+      skillInput.addEventListener("input", () => {
+        if (skillInput.value) localStorage.setItem(KEYS.skill, skillInput.value);
+        else localStorage.removeItem(KEYS.skill);
+      });
+      ragDocInput.addEventListener("input", () => {
+        if (ragDocInput.value) localStorage.setItem(KEYS.rag_doc, ragDocInput.value);
+        else localStorage.removeItem(KEYS.rag_doc);
+      });
+
+      samplingPresetSelect.addEventListener("change", () => {
+        const key = samplingPresetSelect.value;
+        if (!key) return;
+        const preset = SAMPLING_PRESETS[key];
+        if (!preset) return;
+        tempInput.value = preset.temperature;
+        toppInput.value = preset.top_p;
+        sessionStorage.setItem(KEYS.temperature, String(preset.temperature));
+        sessionStorage.setItem(KEYS.top_p, String(preset.top_p));
+        renderSliderValues();
+      });
+
+      function findSamplingPresetKey(temperature, top_p) {
+        for (const [k, v] of Object.entries(SAMPLING_PRESETS)) {
+          if (
+            Math.abs(v.temperature - temperature) < 0.01 &&
+            Math.abs(v.top_p - top_p) < 0.01
+          ) {
+            return k;
+          }
+        }
+        return "";
+      }
+      function syncSamplingPresetIndicator() {
+        samplingPresetSelect.value = findSamplingPresetKey(
+          parseFloat(tempInput.value),
+          parseFloat(toppInput.value)
+        );
+      }
+      syncSamplingPresetIndicator();
+
+      function applyLogprobsState() {
+        document.body.dataset.logprobsOn = showLogprobsInput.checked ? "true" : "false";
+      }
+      applyLogprobsState();
+
+      function applySpeechState(label = null) {
+        const speaking = document.body.dataset.speaking === "true";
+        if (chatIndicatorStatus) {
+          if (label) chatIndicatorStatus.textContent = label;
+          else if (isListening) chatIndicatorStatus.textContent = "Listening Live";
+          else if (speaking) chatIndicatorStatus.textContent = "Speaking";
+          else chatIndicatorStatus.textContent = "Listening";
+        }
+      }
+
+      function applyMicState(label = null) {
+        if (!micBtn) return;
+        micBtn.dataset.listening = isListening ? "true" : "false";
+        micBtn.setAttribute("aria-label", isListening ? "Stop voice input" : "Start voice input");
+        micBtn.title = label || (recognitionSupported
+          ? (isListening ? "Stop voice input" : "Start voice input")
+          : "Voice input is not supported in this browser");
+        if (!recognitionSupported) micBtn.disabled = true;
+      }
+
+      function stopListening() {
+        if (!recognition) return;
+        try {
+          recognition.stop();
+        } catch {}
+      }
+
+      function initVoiceInput() {
+        const RecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognitionSupported = Boolean(RecognitionCtor);
+        if (!recognitionSupported) {
+          applyMicState();
+          return;
+        }
+        recognition = new RecognitionCtor();
+        recognition.lang = navigator.language || "en-US";
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+          isListening = true;
+          listeningSeedText = input.value.trim();
+          voiceCapturedText = false;
+          applyMicState();
+          applySpeechState();
+        };
+        recognition.onresult = (event) => {
+          let finalText = "";
+          let interimText = "";
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const transcript = event.results[i][0]?.transcript || "";
+            if (event.results[i].isFinal) {
+              finalText += transcript;
+              if (transcript.trim()) voiceCapturedText = true;
+            }
+            else interimText += transcript;
+          }
+          const combined = `${listeningSeedText} ${finalText || interimText}`.trim();
+          input.value = combined;
+        };
+        recognition.onerror = () => {
+          isListening = false;
+          applyMicState("Microphone access failed");
+          applySpeechState("Mic Error");
+          setTimeout(() => {
+            applyMicState();
+            applySpeechState();
+          }, 1800);
+        };
+        recognition.onend = () => {
+          isListening = false;
+          listeningSeedText = "";
+          applyMicState();
+          applySpeechState();
+          const shouldAutoSend =
+            voiceCapturedText &&
+            input.value.trim() &&
+            !sendBtn.disabled &&
+            !!keyInput.value;
+          voiceCapturedText = false;
+          if (shouldAutoSend) {
+            form.requestSubmit();
+            return;
+          }
+          input.focus();
+        };
+        applyMicState();
+      }
+
+      function pickPreferredVoice(voices) {
+        const preferredName = sessionStorage.getItem(KEYS.voice_name) || voiceSelect.value;
+        if (preferredName) {
+          const exact = voices.find((voice) => voice.name === preferredName);
+          if (exact) return exact;
+        }
+        return (
+          voices.find((voice) => /en-gb/i.test(voice.lang) && /(daniel|george|arthur|male|uk)/i.test(`${voice.name} ${voice.voiceURI}`)) ||
+          voices.find((voice) => /en-gb/i.test(voice.lang)) ||
+          voices.find((voice) => /^en/i.test(voice.lang)) ||
+          voices[0] ||
+          null
+        );
+      }
+
+      function populateVoiceOptions() {
+        if (!("speechSynthesis" in window)) {
+          voiceSelect.innerHTML = '<option value="">Speech not supported in this browser</option>';
+          voiceSelect.disabled = true;
+          speakRepliesInput.disabled = true;
+          applySpeechState("No Voice");
+          return;
+        }
+        const voices = window.speechSynthesis.getVoices();
+        const selectedValue = sessionStorage.getItem(KEYS.voice_name) || voiceSelect.value || "";
+        voiceSelect.innerHTML = '<option value="">System default</option>';
+        for (const voice of voices) {
+          const option = document.createElement("option");
+          option.value = voice.name;
+          option.textContent = `${voice.name} (${voice.lang})`;
+          voiceSelect.appendChild(option);
+        }
+        const preferred = pickPreferredVoice(voices);
+        voiceSelect.value =
+          voices.some((voice) => voice.name === selectedValue) ? selectedValue : (preferred?.name || "");
+      }
+
+      function stopSpeech() {
+        if (!("speechSynthesis" in window)) return;
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+          window.speechSynthesis.cancel();
+        }
+        activeUtterance = null;
+        document.body.dataset.speaking = "false";
+        document.querySelectorAll('.turn.assistant[data-speaking="true"]').forEach((el) => {
+          el.dataset.speaking = "false";
+        });
+        applySpeechState();
+      }
+
+      function speakReply(text, wrap) {
+        if (!speakRepliesInput.checked || !("speechSynthesis" in window)) return;
+        const cleanText = text.replace(/[`*_>#-]+/g, " ").replace(/\s+/g, " ").trim();
+        if (!cleanText) return;
+        stopSpeech();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        const selectedVoice = pickPreferredVoice(window.speechSynthesis.getVoices());
+        if (selectedVoice) utterance.voice = selectedVoice;
+        utterance.rate = 0.95;
+        utterance.pitch = 0.9;
+        utterance.onstart = () => {
+          activeUtterance = utterance;
+          document.body.dataset.speaking = "true";
+          if (wrap) wrap.dataset.speaking = "true";
+          applySpeechState("Speaking");
+        };
+        utterance.onend = () => {
+          if (wrap) wrap.dataset.speaking = "false";
+          if (activeUtterance === utterance) activeUtterance = null;
+          document.body.dataset.speaking = "false";
+          applySpeechState();
+        };
+        utterance.onerror = () => {
+          if (wrap) wrap.dataset.speaking = "false";
+          if (activeUtterance === utterance) activeUtterance = null;
+          document.body.dataset.speaking = "false";
+          applySpeechState("Voice Error");
+          setTimeout(() => applySpeechState(), 1800);
+        };
+        window.speechSynthesis.speak(utterance);
+      }
+
+      if ("speechSynthesis" in window) {
+        populateVoiceOptions();
+        window.speechSynthesis.onvoiceschanged = populateVoiceOptions;
+      } else {
+        applySpeechState("No Voice");
+      }
+      initVoiceInput();
+      applySpeechState();
+
+      resetSystemBtn.addEventListener("click", () => {
+        systemInput.value = DEFAULT_SYSTEM;
+        sessionStorage.setItem(KEYS.system, DEFAULT_SYSTEM);
+        syncPresetIndicator();
+      });
+
+      // Apply a preset when the user picks one. Editing the textarea afterwards
+      // clears the indicator back to "Presetâ€¦" via syncPresetIndicator().
+      presetSelect.addEventListener("change", () => {
+        const key = presetSelect.value;
+        if (!key) return;
+        const preset = PRESETS[key];
+        if (!preset) return;
+        systemInput.value = preset.prompt;
+        sessionStorage.setItem(KEYS.system, preset.prompt);
+      });
+
+      function findPresetKey(prompt) {
+        for (const [k, v] of Object.entries(PRESETS)) {
+          if (v.prompt === prompt) return k;
+        }
+        return "";
+      }
+      function syncPresetIndicator() {
+        presetSelect.value = findPresetKey(systemInput.value);
+      }
+      syncPresetIndicator();
+
+      // Lock sampling-slider UI when a sampling-locked model is selected.
+      function applySamplingLock() {
+        document.body.dataset.samplingLocked =
+          SAMPLING_LOCKED(modelSelect.value) ? "true" : "false";
+      }
+      modelSelect.addEventListener("change", applySamplingLock);
+      applySamplingLock();
+
+      // Drawer open/close.
+      function setMenu(open) {
+        document.body.dataset.menu = open ? "open" : "closed";
+        drawer.setAttribute("aria-hidden", open ? "false" : "true");
+      }
+      menuToggle.addEventListener("click", () => setMenu(document.body.dataset.menu !== "open"));
+      drawerClose.addEventListener("click", () => setMenu(false));
+      backdrop.addEventListener("click", () => setMenu(false));
+
+      // Help tooltips: hover on desktop; tap to toggle on touch devices.
+      // Clicking anywhere else closes any open tooltip.
+      document.querySelectorAll(".help-tip").forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          document.querySelectorAll(".help-tip.open").forEach((other) => {
+            if (other !== btn) other.classList.remove("open");
+          });
+          btn.classList.toggle("open");
+        });
+      });
+      document.addEventListener("click", () => {
+        document.querySelectorAll(".help-tip.open").forEach((b) => b.classList.remove("open"));
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && document.body.dataset.menu === "open") setMenu(false);
+      });
+
+      // On desktop the drawer is a persistent sidebar, so default to open.
+      // On narrower screens it's a modal overlay, so default closed unless
+      // the user hasn't set an API key yet (in which case guide them to it).
+      const isWide = window.matchMedia("(min-width: 900px)").matches;
+      setMenu(isWide || !keyInput.value);
+
+      // Drawer resize: drag the right edge to change sidebar width. Persisted
+      // in sessionStorage so it survives reloads within the same tab.
+      const DRAWER_MIN = 320;
+      const DRAWER_MAX = 720;
+      function setDrawerWidth(px) {
+        const clamped = Math.max(DRAWER_MIN, Math.min(DRAWER_MAX, px));
+        document.documentElement.style.setProperty("--drawer-width", `${clamped}px`);
+        sessionStorage.setItem(KEYS.drawer_width, String(clamped));
+      }
+      const savedWidth = parseInt(sessionStorage.getItem(KEYS.drawer_width), 10);
+      if (Number.isFinite(savedWidth)) setDrawerWidth(savedWidth);
+
+      let dragging = false;
+      resizeHandle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        dragging = true;
+        resizeHandle.setPointerCapture(event.pointerId);
+        document.body.classList.add("drawer-resizing");
+      });
+      resizeHandle.addEventListener("pointermove", (event) => {
+        if (!dragging) return;
+        setDrawerWidth(event.clientX);
+      });
+      const endDrag = (event) => {
+        if (!dragging) return;
+        dragging = false;
+        try { resizeHandle.releasePointerCapture(event.pointerId); } catch {}
+        document.body.classList.remove("drawer-resizing");
+      };
+      resizeHandle.addEventListener("pointerup", endDrag);
+      resizeHandle.addEventListener("pointercancel", endDrag);
+
+      async function saveHistoryToSupabase() {
+        const client = getSupabaseClient();
+        if (!client) {
+          if (supabaseStatus) supabaseStatus.textContent = "Add your Supabase URL + anon key first.";
+          return;
+        }
+        try {
+          await client.from("chat_memory").delete().eq("user_id", "demo");
+          if (history.length) {
+            const rows = history.map((m) => ({
+              user_id: "demo",
+              role: m.role,
+              content: m.content,
+              payload: JSON.parse(JSON.stringify(m)),
+            }));
+            const { error } = await client.from("chat_memory").insert(rows);
+            if (error) throw error;
+          }
+          if (supabaseStatus) supabaseStatus.textContent = `Saved ${history.length} row(s) to chat_memory.`;
+        } catch (err) {
+          console.error("Supabase save failed:", err);
+          if (supabaseStatus) supabaseStatus.textContent = `Supabase save failed: ${err.message || err}`;
+        }
+      }
+
+      async function saveHistoryToStorage() {
+        if (!rememberConversationInput.checked) return;
+        if (getMemoryBackend() === "supabase") {
+          await saveHistoryToSupabase();
+          return;
+        }
+        try {
+          localStorage.setItem(KEYS.history, JSON.stringify(history));
+        } catch {}
+      }
+
+      async function embed(text) {
+        let r;
+        try {
+          r = await fetch("https://api.openai.com/v1/embeddings", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${keyInput.value}`,
+            },
+            body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
+          });
+        } catch {
+          throw new Error("Network error while contacting OpenAI embeddings. Check your internet connection, browser privacy extensions, and whether api.openai.com is blocked.");
+        }
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body?.error?.message || `Embeddings HTTP ${r.status}`);
+        }
+        const body = await r.json();
+        return body.data[0].embedding;
+      }
+
+      function cosineSim(a, b) {
+        let dot = 0;
+        let na = 0;
+        let nb = 0;
+        for (let i = 0; i < a.length; i += 1) {
+          dot += a[i] * b[i];
+          na += a[i] * a[i];
+          nb += b[i] * b[i];
+        }
+        return dot / (Math.sqrt(na) * Math.sqrt(nb));
+      }
+
+      // BM25 keyword retrieval constants
+      const BM25_K1 = 1.5;
+      const BM25_B = 0.75;
+      const BM25_STOPWORDS = new Set([
+        "a", "an", "and", "are", "as", "at", "be", "but", "by", "did",
+        "do", "does", "for", "from", "had", "has", "have", "he", "her",
+        "hers", "him", "his", "how", "i", "if", "in", "is", "it", "its",
+        "may", "me", "might", "my", "of", "on", "or", "she", "should",
+        "so", "some", "than", "that", "the", "their", "them", "they",
+        "this", "to", "was", "we", "were", "what", "when", "where",
+        "which", "who", "why", "will", "with", "would", "you", "your"
+      ]);
+
+      function bm25Tokenise(text) {
+        return (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+      }
+
+      function bm25Rank(query, chunks) {
+        if (!chunks.length) return [];
+        const tokenised = chunks.map((c) => bm25Tokenise(c.text));
+        const lens = tokenised.map((t) => t.length);
+        const N = chunks.length;
+        const avgLen = lens.reduce((s, l) => s + l, 0) / Math.max(1, N);
+
+        const df = new Map();
+        for (const tokens of tokenised) {
+          const seen = new Set(tokens);
+          for (const t of seen) df.set(t, (df.get(t) || 0) + 1);
+        }
+
+        const queryTerms = [...new Set(bm25Tokenise(query))]
+          .filter((t) => !BM25_STOPWORDS.has(t));
+        return tokenised
+          .map((tokens, i) => {
+            const tf = new Map();
+            for (const t of tokens) tf.set(t, (tf.get(t) || 0) + 1);
+            let score = 0;
+            for (const q of queryTerms) {
+              const f = tf.get(q) || 0;
+              if (!f) continue;
+              const dfq = df.get(q) || 0;
+              const idf = Math.log((N - dfq + 0.5) / (dfq + 0.5) + 1);
+              const norm = (f * (BM25_K1 + 1)) / (f + BM25_K1 * (1 - BM25_B + (BM25_B * lens[i]) / avgLen));
+              score += idf * norm;
+            }
+            return { idx: i, score };
+          })
+          .sort((a, b) => b.score - a.score);
+      }
+
+      function getRagMode() {
+        const checked = document.querySelector('input[name="rag-mode"]:checked');
+        return checked ? checked.value : "keyword";
+      }
+
+      ragIndexBtn.addEventListener("click", async () => {
+        const text = ragDocInput.value.trim();
+        if (!text) {
+          ragStatus.textContent = "Paste a document first.";
+          return;
+        }
+        const mode = getRagMode();
+        if (mode === "semantic" && !keyInput.value) {
+          ragStatus.textContent = "Add your OpenAI API key in Settings first (semantic mode embeds at index time).";
+          return;
+        }
+        ragIndexBtn.disabled = true;
+        const before = ragIndex.length;
+        ragStatus.textContent = mode === "keyword" ? "Chunking…" : "Indexing…";
+        try {
+          const chunks = text.match(/[\s\S]{1,500}/g) || [];
+          if (mode === "keyword") {
+            for (const chunk of chunks) ragIndex.push({ text: chunk });
+            ragStatus.textContent = `Added ${chunks.length} chunk(s) (keyword mode — no embeddings). ${ragIndex.length} total.`;
+          } else {
+            for (let i = 0; i < chunks.length; i += 1) {
+              ragStatus.textContent = `Embedding chunk ${i + 1} of ${chunks.length}…`;
+              ragIndex.push({ text: chunks[i], embedding: await embed(chunks[i]) });
+            }
+            const added = ragIndex.length - before;
+            ragStatus.textContent = `Added ${added} chunk(s). ${ragIndex.length} total in the index.`;
+          }
+          try { localStorage.setItem(KEYS.rag_index, JSON.stringify(ragIndex)); } catch {}
+          ragDocInput.value = "";
+          localStorage.removeItem(KEYS.rag_doc);
+        } catch (err) {
+          ragStatus.textContent = `Indexing failed: ${err.message || err}`;
+        } finally {
+          ragIndexBtn.disabled = false;
+        }
+      });
+      ragClearBtn.addEventListener("click", () => {
+        ragIndex = [];
+        try { localStorage.removeItem(KEYS.rag_index); } catch {}
+        ragStatus.textContent = "Index cleared.";
+      });
+
+      async function retrieveContext(query, k = 3) {
+        if (!ragIndex.length || !query) return "";
+        const mode = getRagMode();
+        try {
+          if (mode === "keyword") {
+            return bm25Rank(query, ragIndex)
+              .filter((r) => r.score > 0)
+              .slice(0, k)
+              .map((r) => ragIndex[r.idx].text)
+              .join("\n\n---\n\n");
+          }
+          // Semantic mode: embed the query, cosine-rank
+          const q = await embed(query);
+          return ragIndex
+            .map((chunk) => ({ text: chunk.text, score: cosineSim(chunk.embedding, q) }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, k)
+            .map((chunk) => chunk.text)
+            .join("\n\n---\n\n");
+        } catch {
+          return "";
+        }
+      }
+
+      function getActiveSkillContent() {
+        const parts = [];
+        for (const skill of PRESET_SKILLS) {
+          const cb = document.getElementById(`skill-preset-${skill.id}`);
+          if (cb && cb.checked) parts.push(`# ${skill.name}\n\n${skill.content}`);
+        }
+        const custom = skillInput.value.trim();
+        if (custom) parts.push(`# Your skill\n\n${custom}`);
+        return parts.join("\n\n---\n\n");
+      }
+
+      async function buildAugmentedSystemPrompt(lastUserMessage) {
+        const parts = [systemInput.value];
+        const skills = getActiveSkillContent();
+        let retrievedContext = "";
+        let retrievedChunkCount = 0;
+        let retrievedMode = "";
+        if (skills) parts.push(skills);
+        if (lastUserMessage && ragIndex.length) {
+          retrievedMode = getRagMode();
+          retrievedContext = await retrieveContext(lastUserMessage);
+          if (retrievedContext) {
+            retrievedChunkCount = retrievedContext.split("\n\n---\n\n").length;
+            parts.push(
+              "# Retrieved context\n\nUse the following passages from the indexed document where they help. If the answer is not in them, say so plainly rather than guessing.\n\n" +
+              retrievedContext
+            );
+          }
+        }
+        return {
+          prompt: parts.join("\n\n---\n\n"),
+          retrievedContext,
+          retrievedChunkCount,
+          retrievedMode,
+        };
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        stopSpeech();
+        stopListening();
+        const text = input.value.trim();
+        if (!text) return;
+        if (!keyInput.value) {
+          addMessage("error", "Paste an OpenAI API key in Settings first.");
+          setMenu(true);
+          return;
+        }
+
+        const placeholderEl = document.getElementById("placeholder");
+        if (placeholderEl) placeholderEl.remove();
+        const userBubble = addMessage("user", text);
+        const isFirstTurn = prevPromptTokens === 0;
+        history.push({
+          role: "user",
+          content: text,
+          timestamp: new Date().toISOString(),
+        });
+        input.value = "";
+        await sendCompletion({ userBubble, isFirstTurn, newUserMessage: true });
+      });
+
+      // Shared flow for both fresh submissions and regenerations. When
+      // `newUserMessage` is true we're responding to the user's latest text,
+      // so the delta-based user-token meta is rendered and we revert the
+      // pushed user entry on error. On regeneration the user bubble already
+      // has its meta from the previous successful call; we just want a fresh
+      // assistant reply for the same history.
+      async function sendCompletion({ userBubble, isFirstTurn, newUserMessage }) {
+        sendBtn.disabled = true;
+        refreshToolbar();
+        const loading = addMessage("assistant", "â€¦");
+
+        try {
+          const model = modelSelect.value;
+          const requestedAt = Date.now();
+          const wantLogprobs = showLogprobsInput.checked;
+          // Stream tokens into the bubble as they arrive. Keep auto-scroll
+          // on while the user is still pinned to the bottom of the chat;
+          // if they scrolled up to read earlier messages, don't yank them
+          // back.
+          let firstToken = true;
+          const onDelta = (text) => {
+            const wasAtBottom =
+              chatEl.scrollTop + chatEl.clientHeight >= chatEl.scrollHeight - 24;
+            if (firstToken) {
+              resetBubbleInner(loading);
+              loading.wrap.dataset.streaming = "true";
+              firstToken = false;
+            }
+            loading.inner.appendChild(document.createTextNode(text));
+            if (wasAtBottom) chatEl.scrollTop = chatEl.scrollHeight;
+          };
+          const lastUserMessage = [...history].reverse().find((m) => m.role === "user")?.content || "";
+          const { prompt: augmentedSystem, retrievedContext, retrievedChunkCount, retrievedMode } =
+            await buildAugmentedSystemPrompt(lastUserMessage);
+          const { reply, usage, finish_reason, model_snapshot, id, logprobs } =
+            await callOpenAI({
+              apiKey: keyInput.value,
+              model,
+              systemPrompt: augmentedSystem,
+              messages: history,
+              temperature: parseFloat(tempInput.value),
+              top_p: parseFloat(toppInput.value),
+              max_tokens: parseInt(maxtokInput.value, 10),
+              wantLogprobs,
+              onDelta,
+            });
+          const latencyMs = Date.now() - requestedAt;
+          loading.wrap.dataset.streaming = "false";
+          // Final pass: once we have the full reply, swap the streamed
+          // plain-text in for either the token-chip view or a sanitised
+          // markdown render.
+          if (logprobs && wantLogprobs) {
+            resetBubbleInner(loading);
+            loading.inner.appendChild(renderTokenChips(logprobs));
+          } else {
+            resetBubbleInner(loading);
+            loading.inner.insertAdjacentHTML("beforeend", renderMarkdown(reply));
+          }
+          speakReply(reply, loading.wrap);
+          const entry = {
+            role: "assistant",
+            content: reply,
+            timestamp: new Date().toISOString(),
+            model_snapshot,
+            finish_reason,
+            usage,
+            latency_ms: latencyMs,
+            response_id: id,
+            logprobs,
+            retrieved_context: retrievedContext || null,
+            retrieved_chunk_count: retrievedChunkCount || 0,
+            retrieval_mode: retrievedMode || null,
+          };
+          entry[WRAP] = loading.wrap;
+          history.push(entry);
+          if (usage) {
+            const inTok = usage.prompt_tokens || 0;
+            const outTok = (usage.total_tokens || 0) - inTok;
+            const reasoningTok =
+              usage.completion_tokens_details?.reasoning_tokens || 0;
+            const cachedTok =
+              usage.prompt_tokens_details?.cached_tokens || 0;
+            tokensIn += inTok;
+            tokensOut += Math.max(0, outTok);
+            tokensCached += cachedTok;
+            const cost = estimateCost(usage, model);
+            costTotal += cost;
+
+            if (newUserMessage && userBubble) {
+              // Back-compute this user turn's tokens from the prompt_tokens
+              // delta. First turn: the whole prompt_tokens is system + user,
+              // so we flag it as including the system prompt. Later turns:
+              // delta minus the prior assistant reply isolates this single
+              // user message.
+              const userTurnTokens = isFirstTurn
+                ? inTok
+                : Math.max(0, inTok - prevPromptTokens - prevCompletionTokens);
+              appendUserMeta(userBubble.wrap, userTurnTokens, isFirstTurn);
+            }
+
+            appendMeta(loading.wrap, inTok, outTok, reasoningTok, cachedTok, cost, retrievedChunkCount);
+            appendActionChips(loading.wrap, reply);
+
+            prevPromptTokens = inTok;
+            prevCompletionTokens = Math.max(0, outTok);
+          }
+          // Once the full reply has rendered (markdown or token chips, plus
+          // meta and Copy/Regenerate chips) force a scroll to the bottom so
+          // the Regenerate button is always visible without the user hunting
+          // for it. Override the mid-stream "only if user was at bottom"
+          // behaviour for this final pass.
+          chatEl.scrollTop = chatEl.scrollHeight;
+          await saveHistoryToStorage();
+        } catch (err) {
+          loading.wrap.remove();
+          addMessage("error", err.message || String(err));
+          if (newUserMessage) history.pop();
+          await saveHistoryToStorage();
+        } finally {
+          sendBtn.disabled = false;
+          refreshToolbar();
+          input.focus();
+        }
+      }
+
+      async function regenerate() {
+        if (!history.length) return;
+        stopSpeech();
+        stopListening();
+        const last = history[history.length - 1];
+        if (last.role !== "assistant") return;
+        // Remove the old reply from both history and DOM, then ask for a new
+        // one with the same prior context. Running totals keep accumulating â€”
+        // the old tokens were paid for, the new tokens add on top.
+        history.pop();
+        last[WRAP]?.remove();
+        await sendCompletion({
+          userBubble: null,
+          isFirstTurn: false,
+          newUserMessage: false,
+        });
+      }
+
+      // Two flavours of JSON export.
+      //   simple:   a human-readable transcript â€” model, system prompt, and
+      //             each turn as just { role, content }. Looks like a regular
+      //             OpenAI chat-completion messages payload.
+      //   detailed: everything the app has captured â€” per-turn usage (incl.
+      //             cached_tokens, reasoning_tokens), finish_reason, served
+      //             model snapshot, latency, response id, full logprobs.
+      function downloadJson(detailed) {
+        const activeSkills = PRESET_SKILLS
+          .filter((skill) => {
+            const cb = document.getElementById(`skill-preset-${skill.id}`);
+            return cb && cb.checked;
+          })
+          .map((skill) => ({ id: skill.id, name: skill.name }));
+        const customSkill = skillInput.value.trim();
+        const skillsBlob = getActiveSkillContent();
+        const systemPromptAssembled = [systemInput.value, skillsBlob].filter(Boolean).join("\n\n---\n\n");
+        const basePayload = {
+          exported_at: new Date().toISOString(),
+          model: modelSelect.value,
+          system_prompt: systemInput.value,
+          skills_active: activeSkills,
+          custom_skill: customSkill || null,
+          system_prompt_assembled: systemPromptAssembled,
+          memory_backend: getMemoryBackend(),
+          rag_chunks_indexed: ragIndex.length,
+        };
+        let payload;
+        if (detailed) {
+          payload = {
+            ...basePayload,
+            sampling: {
+              temperature: parseFloat(tempInput.value),
+              top_p: parseFloat(toppInput.value),
+              max_tokens: parseInt(maxtokInput.value, 10),
+            },
+            tokens: { prompt: tokensIn, completion: tokensOut },
+            estimated_cost_usd: Number(costTotal.toFixed(6)),
+            messages: history,
+          };
+        } else {
+          payload = {
+            ...basePayload,
+            messages: history.map(({ role, content }) => ({ role, content })),
+          };
+        }
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const flavour = detailed ? "detailed" : "simple";
+        a.download = `lmt-chatbot-${flavour}-${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+      downloadSimpleBtn.addEventListener("click", () => downloadJson(false));
+      downloadDetailedBtn.addEventListener("click", () => downloadJson(true));
+
+      clearBtn.addEventListener("click", () => {
+        if (!history.length) return;
+        if (!confirm("Clear the conversation off the screen? Stored memory stays untouched. Reload to bring it back, or use Reset all to wipe storage too.")) return;
+        stopSpeech();
+        stopListening();
+        history.length = 0;
+        tokensIn = 0;
+        tokensOut = 0;
+        tokensCached = 0;
+        costTotal = 0;
+        prevPromptTokens = 0;
+        prevCompletionTokens = 0;
+        renderHero();
+        refreshToolbar();
+      });
+
+      function renderHero() {
+        chatEl.innerHTML = `
+          <div class="chat-header">
+            <div>
+              <h2 class="chat-title">Command Channel</h2>
+              <p class="chat-subtitle">Conversational systems interface with live response telemetry</p>
+            </div>
+            <div class="chat-indicator">
+              <span class="chat-indicator-core"></span>
+              <span id="chat-indicator-status">Listening</span>
+            </div>
+          </div>
+          <div class="hero" id="placeholder">
+            <div class="hero-core" aria-hidden="true">
+              <div class="hero-orbit"></div>
+              <div class="hero-scan"></div>
+              <div class="hero-ring-tilt"></div>
+              <div class="hero-core-pulse"></div>
+              <div class="hero-core-center"></div>
+            </div>
+            <h1 class="hero-title">Jarvis</h1>
+          </div>
+        `;
+        chatIndicatorStatus = document.getElementById("chat-indicator-status");
+        applySpeechState();
+      }
+
+      resetAllBtn.addEventListener("click", () => {
+        if (!confirm("Reset everything? This wipes the key, the system prompt, the sliders, and the conversation.")) return;
+        if (getMemoryBackend() === "supabase") {
+          const client = getSupabaseClient();
+          if (client) {
+            client.from("chat_memory").delete().eq("user_id", "demo").catch((err) => {
+              console.error("Supabase clear failed:", err);
+            });
+          }
+        }
+        Object.entries(KEYS).forEach(([name, key]) => {
+          if ([
+            "remember_conversation",
+            "history",
+            "skill",
+            "skill_active_prefix",
+            "rag_doc",
+            "rag_index",
+            "memory_backend",
+            "supabase_url",
+            "supabase_key",
+          ].includes(name)) return;
+          sessionStorage.removeItem(key);
+        });
+        localStorage.removeItem(KEYS.remember_conversation);
+        localStorage.removeItem(KEYS.history);
+        localStorage.removeItem(KEYS.skill);
+        localStorage.removeItem(KEYS.rag_doc);
+        localStorage.removeItem(KEYS.rag_index);
+        localStorage.removeItem(KEYS.memory_backend);
+        localStorage.removeItem(KEYS.supabase_url);
+        localStorage.removeItem(KEYS.supabase_key);
+        for (const skill of PRESET_SKILLS) {
+          localStorage.removeItem(KEYS.skill_active_prefix + skill.id);
+          const cb = document.getElementById(`skill-preset-${skill.id}`);
+          if (cb) cb.checked = false;
+        }
+        stopSpeech();
+        stopListening();
+        keyInput.value = "";
+        systemInput.value = DEFAULT_SYSTEM;
+        modelSelect.value = DEFAULTS.model;
+        tempInput.value = DEFAULTS.temperature;
+        toppInput.value = DEFAULTS.top_p;
+        maxtokInput.value = DEFAULTS.max_tokens;
+        speakRepliesInput.checked = DEFAULTS.speak_replies;
+        voiceSelect.value = "";
+        renderSliderValues();
+        applySamplingLock();
+        syncPresetIndicator();
+        syncSamplingPresetIndicator();
+        showLogprobsInput.checked = false;
+        rememberConversationInput.checked = false;
+        skillInput.value = "";
+        ragDocInput.value = "";
+        ragIndex = [];
+        ragStatus.textContent = "No documents indexed.";
+        for (const r of memoryBackendRadios) r.checked = (r.value === "local");
+        supabaseUrlInput.value = "";
+        supabaseKeyInput.value = "";
+        supabaseClient = null;
+        syncSupabaseFieldsVisibility();
+        if (supabaseStatus) supabaseStatus.textContent = "Add URL + anon key, then send a message to test.";
+        applyLogprobsState();
+        applySpeechState();
+        history.length = 0;
+        tokensIn = 0;
+        tokensOut = 0;
+        tokensCached = 0;
+        costTotal = 0;
+        prevPromptTokens = 0;
+        prevCompletionTokens = 0;
+        renderHero();
+        refreshToolbar();
+        setMenu(true);
+      });
+
+      micBtn.addEventListener("click", async () => {
+        if (!recognitionSupported || !recognition) {
+          applyMicState("Voice input unavailable");
+          setTimeout(() => applyMicState(), 1600);
+          return;
+        }
+        if (isListening) {
+          stopListening();
+          return;
+        }
+        stopSpeech();
+        try {
+          recognition.lang = navigator.language || "en-US";
+          recognition.start();
+        } catch {
+          applyMicState("Microphone busy");
+          setTimeout(() => applyMicState(), 1600);
+        }
+      });
+
+      async function callOpenAI({ apiKey, model, systemPrompt, messages, temperature, top_p, max_tokens, wantLogprobs, onDelta }) {
+        // Per-model quirks:
+        //  - gpt-3.5-turbo wants `max_tokens`; newer families want `max_completion_tokens`.
+        //  - gpt-5 reasoning-tuned variants reject non-default `temperature` and `top_p`,
+        //    so omit them entirely for those models.
+        //  - logprobs is only supported on non-reasoning chat models. We gate
+        //    it on the same SAMPLING_LOCKED predicate so reasoning models
+        //    silently fall back to no-logprobs instead of 400-ing.
+        //  - We always stream so students see the autoregressive token-by-token
+        //    generation live. stream_options.include_usage makes the final
+        //    chunk carry a complete usage object.
+        const payload = {
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages.map(({ role, content }) => ({ role, content })),
+          ],
+          stream: true,
+          stream_options: { include_usage: true },
+        };
+        if (!SAMPLING_LOCKED(model)) {
+          payload.temperature = temperature;
+          payload.top_p = top_p;
+          if (wantLogprobs) {
+            payload.logprobs = true;
+            payload.top_logprobs = 5;
+          }
+          // When the user picks the 'Reproducible' preset (temperature 0),
+          // pin OpenAI's sampler to a fixed seed so every student who sends
+          // the same prompt gets byte-identical output. Best-effort per the
+          // API reference â€” and without this, temp 0 alone is still subject
+          // to backend variance.
+          if (temperature === 0) payload.seed = 42;
+        }
+        if (model.startsWith("gpt-3.5")) {
+          payload.max_tokens = max_tokens;
+        } else {
+          payload.max_completion_tokens = max_tokens;
+        }
+
+        let response;
+        try {
+          response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch {
+          throw new Error("Network error while contacting OpenAI. Check your internet connection, browser privacy extensions, and whether api.openai.com is blocked.");
+        }
+        if (!response.ok) {
+          // Streaming errors are still returned as a single JSON error body.
+          const body = await response.json().catch(() => ({}));
+          const msg = body?.error?.message ?? `HTTP ${response.status}`;
+          throw new Error(msg);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let replyText = "";
+        let usage = null;
+        let finishReason = null;
+        let modelSnapshot = null;
+        let id = null;
+        const logprobsContent = [];
+
+        // Consume SSE events. One self-contained parser that handles both the
+        // per-chunk deltas and any trailing data line the server may have
+        // sent without a final newline.
+        const processSseLine = (rawLine) => {
+          const line = rawLine.trim();
+          if (!line.startsWith("data:")) return;
+          const data = line.slice(5).trim();
+          if (!data || data === "[DONE]") return;
+          let chunk;
+          try { chunk = JSON.parse(data); } catch { return; }
+          if (chunk.error) throw new Error(chunk.error.message || "Streaming error");
+          if (chunk.model) modelSnapshot = chunk.model;
+          if (chunk.id) id = chunk.id;
+          if (chunk.usage) usage = chunk.usage;
+          const choice = chunk.choices?.[0];
+          if (!choice) return;
+          if (choice.finish_reason) finishReason = choice.finish_reason;
+          const delta = choice.delta?.content;
+          if (delta) {
+            replyText += delta;
+            if (onDelta) onDelta(delta);
+          }
+          const lpDelta = choice.logprobs?.content;
+          if (Array.isArray(lpDelta)) logprobsContent.push(...lpDelta);
+        };
+
+        streamLoop: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const rawLine of lines) {
+            if (rawLine.trim() === "data: [DONE]") break streamLoop;
+            processSseLine(rawLine);
+          }
+        }
+        // Flush the decoder and any trailing line the server didn't
+        // terminate with a newline â€” otherwise we'd silently drop the last
+        // data event when the stream ends without a final \n.
+        buffer += decoder.decode();
+        if (buffer.trim()) processSseLine(buffer);
+
+        return {
+          reply: replyText,
+          usage,
+          finish_reason: finishReason,
+          model_snapshot: modelSnapshot,
+          id,
+          logprobs: logprobsContent.length ? logprobsContent : null,
+        };
+      }
+
+      function addMessage(role, text) {
+        const wrap = document.createElement("div");
+        wrap.className = `turn ${role}`;
+        if (role === "assistant" && (text === "â€¦" || text === "Ã¢â‚¬Â¦")) wrap.dataset.streaming = "true";
+        const bubble = document.createElement("div");
+        bubble.className = `msg ${role}`;
+        const inner = document.createElement("div");
+        inner.className = "msg-inner";
+        if (role === "assistant") {
+          inner.appendChild(createVoiceBars());
+        }
+        inner.appendChild(document.createTextNode(text));
+        bubble.appendChild(inner);
+        wrap.appendChild(bubble);
+        chatEl.appendChild(wrap);
+        bubble.scrollIntoView({ behavior: "smooth", block: "end" });
+        return { wrap, bubble, inner };
+      }
+
+      function createVoiceBars() {
+        const bars = document.createElement("div");
+        bars.className = "voice-bars";
+        bars.innerHTML = "<span></span><span></span><span></span><span></span>";
+        return bars;
+      }
+
+      function resetBubbleInner(messageRef) {
+        const isAssistant = messageRef.bubble.classList.contains("assistant");
+        messageRef.inner.innerHTML = "";
+        if (isAssistant) messageRef.inner.appendChild(createVoiceBars());
+      }
+
+      // Build the coloured token-chip view for a single assistant reply, from
+      // the `logprobs.content` array OpenAI returns when logprobs is enabled.
+      // Each chip's background is driven by the chosen token's logprob
+      // (green = confident, red = uncertain). Click a chip â†’ popover showing
+      // the top-5 alternatives the model considered at that position.
+      function renderTokenChips(content) {
+        const container = document.createElement("span");
+        container.className = "token-chips";
+        for (const item of content) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "token-chip";
+          chip.textContent = item.token;
+          chip.style.background = logprobToColor(item.logprob);
+          const prob = Math.exp(item.logprob) * 100;
+          chip.title = `${prob.toFixed(2)}% â€” click for alternatives`;
+          chip.addEventListener("click", (event) => {
+            event.stopPropagation();
+            showLogprobPopover(chip, item);
+          });
+          container.appendChild(chip);
+        }
+        return container;
+      }
+
+      // Map a log-probability onto a hue from red (very unlikely) to green
+      // (near-certain). Anything below logprob -5 is effectively red.
+      function logprobToColor(lp) {
+        const clamped = Math.max(-5, Math.min(0, lp));
+        const hue = 120 * (1 + clamped / 5);
+        return `hsl(${hue.toFixed(0)}, 55%, 28%)`;
+      }
+
+      function showLogprobPopover(anchor, item) {
+        document.querySelectorAll(".logprob-popover").forEach((p) => p.remove());
+        const popover = document.createElement("div");
+        popover.className = "logprob-popover";
+
+        const title = document.createElement("div");
+        title.className = "popover-title";
+        const chosenProb = Math.exp(item.logprob) * 100;
+        title.textContent = `"${item.token}" â€” ${chosenProb.toFixed(2)}% chosen`;
+        popover.appendChild(title);
+
+        const list = document.createElement("ul");
+        list.className = "popover-list";
+        for (const alt of item.top_logprobs || []) {
+          const li = document.createElement("li");
+          if (alt.token === item.token) li.classList.add("chosen");
+          const prob = Math.exp(alt.logprob) * 100;
+          const tokenSpan = document.createElement("span");
+          tokenSpan.className = "alt-token";
+          tokenSpan.textContent = JSON.stringify(alt.token).slice(1, -1);
+          const barWrap = document.createElement("span");
+          barWrap.className = "alt-bar-wrap";
+          const bar = document.createElement("span");
+          bar.className = "alt-bar";
+          bar.style.width = `${Math.max(2, prob).toFixed(1)}%`;
+          barWrap.appendChild(bar);
+          const probSpan = document.createElement("span");
+          probSpan.className = "alt-prob";
+          probSpan.textContent = `${prob.toFixed(2)}%`;
+          li.append(tokenSpan, barWrap, probSpan);
+          list.appendChild(li);
+        }
+        popover.appendChild(list);
+
+        document.body.appendChild(popover);
+        // Position below the anchor, clamped to the viewport.
+        const rect = anchor.getBoundingClientRect();
+        const popRect = popover.getBoundingClientRect();
+        const maxLeft = window.innerWidth - popRect.width - 12;
+        const left = Math.min(Math.max(12, rect.left), maxLeft);
+        popover.style.left = `${left}px`;
+        popover.style.top = `${rect.bottom + 6}px`;
+
+        const dismiss = (event) => {
+          if (!popover.contains(event.target) && event.target !== anchor) {
+            popover.remove();
+            document.removeEventListener("click", dismiss);
+          }
+        };
+        setTimeout(() => document.addEventListener("click", dismiss), 0);
+      }
+
+      function appendActionChips(wrap, textForCopy) {
+        const row = document.createElement("div");
+        row.className = "msg-actions";
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "action-chip";
+        copyBtn.textContent = "Copy";
+        copyBtn.title = "Copy this reply to the clipboard";
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(textForCopy);
+            copyBtn.textContent = "Copied";
+            copyBtn.classList.add("copied");
+            setTimeout(() => {
+              copyBtn.textContent = "Copy";
+              copyBtn.classList.remove("copied");
+            }, 1200);
+          } catch {
+            copyBtn.textContent = "Copy failed";
+            setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+          }
+        });
+        const regenBtn = document.createElement("button");
+        regenBtn.type = "button";
+        regenBtn.className = "action-chip";
+        regenBtn.textContent = "Regenerate";
+        regenBtn.title = "Ask the model for a different reply to the same prompt";
+        regenBtn.addEventListener("click", () => regenerate());
+        row.append(copyBtn, regenBtn);
+        wrap.appendChild(row);
+      }
+
+      function appendUserMeta(wrap, tokens, isFirstTurn) {
+        const meta = document.createElement("div");
+        meta.className = "msg-meta user";
+        meta.title = isFirstTurn
+          ? "Tokens for this turn. Includes the system prompt, which is always prepended to the first message."
+          : "Tokens this message added to the context.";
+        meta.textContent = isFirstTurn
+          ? `${tokens.toLocaleString()} tokens (incl. system prompt)`
+          : `${tokens.toLocaleString()} tokens`;
+        wrap.appendChild(meta);
+      }
+
+      function appendMeta(wrap, inTok, outTok, reasoningTok, cachedTok, cost, ragChunks = 0) {
+        const meta = document.createElement("div");
+        meta.className = "msg-meta";
+        const bits = [];
+        if (reasoningTok) bits.push("'reasoning' tokens are the model's hidden chain-of-thought, billed as output");
+        if (cachedTok) bits.push("'cached' tokens are prompt tokens that hit OpenAI's automatic prompt cache, billed at a 50% discount");
+        if (ragChunks) bits.push(`+${ragChunks} RAG chunk(s) means retrieved passages were prepended to the system prompt for this reply`);
+        meta.title = bits.length
+          ? `Tokens and cost for this reply. ${bits.join(". ")}.`
+          : "Tokens and cost for this single reply";
+        const out = Math.max(0, outTok).toLocaleString();
+        const inSegment = cachedTok
+          ? `${inTok.toLocaleString()} tokens in Ã‚Â· <span class="cached">${cachedTok.toLocaleString()} cached</span>`
+          : `${inTok.toLocaleString()} tokens in`;
+        const outSegment = reasoningTok
+          ? `${out} tokens out (${reasoningTok.toLocaleString()} reasoning)`
+          : `${out} tokens out`;
+        meta.innerHTML =
+          `${inSegment} Ã‚Â· ${outSegment} Ã‚Â· ` +
+          `<span class="cost">${formatCost(cost)}</span>`;
+        if (ragChunks) {
+          meta.innerHTML += ` Ã‚Â· <span class="rag-flag">+${ragChunks} RAG chunk${ragChunks === 1 ? "" : "s"}</span>`;
+        }
+        wrap.appendChild(meta);
+      }
+
+      function refreshToolbar() {
+        const hasHistory = history.length > 0;
+        downloadSimpleBtn.disabled = !hasHistory;
+        downloadDetailedBtn.disabled = !hasHistory;
+        clearBtn.disabled = !hasHistory;
+        statMsgs.textContent = history.length;
+        statIn.textContent = tokensIn.toLocaleString();
+        statOut.textContent = tokensOut.toLocaleString();
+        statCost.textContent = formatCost(costTotal);
+        // Only surface the cached pill once caching has actually fired.
+        if (tokensCached > 0) {
+          statCached.textContent = `${tokensCached.toLocaleString()} cached`;
+          statCached.hidden = false;
+          statCachedSep.hidden = false;
+        } else {
+          statCached.hidden = true;
+          statCachedSep.hidden = true;
+        }
+      }
+
+      function renderSliderValues() {
+        tempValue.textContent = parseFloat(tempInput.value).toFixed(1);
+        toppValue.textContent = parseFloat(toppInput.value).toFixed(2);
+        maxtokValue.textContent = parseInt(maxtokInput.value, 10).toLocaleString();
+      }
+
+      function setOrClear(storageKey, value) {
+        if (value) sessionStorage.setItem(storageKey, value);
+        else sessionStorage.removeItem(storageKey);
+      }
+    </script>
+  </body>
+</html>
+
