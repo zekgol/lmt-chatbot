@@ -3199,190 +3199,128 @@ Preset use cases (temperature Â· top-p):
       const MAX_AGENT_ITERATIONS = 5;
 
       async function callOpenAI({ apiKey, model, systemPrompt, messages, temperature, top_p, max_tokens, wantLogprobs, onDelta }) {
-        // Agent loop implementation with function calling
-        let currentMessages = [
-          { role: "system", content: systemPrompt },
-          ...messages.map(({ role, content }) => ({ role, content }))
-        ];
-        let finalReply = "";
-        let totalUsage = null;
-        let finishReason = null;
-        let modelSnapshot = null;
-        let responseId = null;
-        let logprobsContent = [];
-        agentLoopIterations = 0;
-
-        // Main agent loop - continues until no more tool calls or max iterations
-        while (agentLoopIterations < MAX_AGENT_ITERATIONS) {
-          agentLoopIterations++;
-          
-          const payload = {
-            model,
-            messages: currentMessages,
-            stream: true,
-            stream_options: { include_usage: true },
-          };
-
-          // Add tools if agent loop is enabled
-          if (agentLoopEnabled) {
-            payload.tools = AGENT_TOOLS.map(tool => ({
-              type: "function",
-              function: tool
-            }));
-            payload.tool_choice = "auto";
+        // Per-model quirks:
+        //  - gpt-3.5-turbo wants `max_tokens`; newer families want `max_completion_tokens`.
+        //  - gpt-5 reasoning-tuned variants reject non-default `temperature` and `top_p`,
+        //    so omit them entirely for those models.
+        //  - logprobs is only supported on non-reasoning chat models. We gate
+        //    it on the same SAMPLING_LOCKED predicate so reasoning models
+        //    silently fall back to no-logprobs instead of 400-ing.
+        //  - We always stream so students see the autoregressive token-by-token
+        //    generation live. stream_options.include_usage makes the final
+        //    chunk carry a complete usage object.
+        const payload = {
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages.map(({ role, content }) => ({ role, content })),
+          ],
+          stream: true,
+          stream_options: { include_usage: true },
+        };
+        if (!SAMPLING_LOCKED(model)) {
+          payload.temperature = temperature;
+          payload.top_p = top_p;
+          if (wantLogprobs) {
+            payload.logprobs = true;
+            payload.top_logprobs = 5;
           }
-
-          if (!SAMPLING_LOCKED(model)) {
-            payload.temperature = temperature;
-            payload.top_p = top_p;
-            if (wantLogprobs) {
-              payload.logprobs = true;
-              payload.top_logprobs = 5;
-            }
-            if (temperature === 0) payload.seed = 42;
-          }
-
-          if (model.startsWith("gpt-3.5")) {
-            payload.max_tokens = max_tokens;
-          } else {
-            payload.max_completion_tokens = max_tokens;
-          }
-
-          let response;
-          try {
-            response = await fetch("https://api.openai.com/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify(payload),
-            });
-          } catch {
-            throw new Error("Network error while contacting OpenAI.");
-          }
-
-          if (!response.ok) {
-            const body = await response.json().catch(() => ({}));
-            const msg = body?.error?.message ?? `HTTP ${response.status}`;
-            throw new Error(msg);
-          }
-
-          // Process streaming response
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          let replyText = "";
-          let toolCalls = [];
-
-          const processSseLine = (rawLine) => {
-            const line = rawLine.trim();
-            if (!line.startsWith("data:")) return;
-            const data = line.slice(5).trim();
-            if (!data || data === "[DONE]") return;
-            let chunk;
-            try { chunk = JSON.parse(data); } catch { return; }
-            if (chunk.error) throw new Error(chunk.error.message || "Streaming error");
-            if (chunk.model) modelSnapshot = chunk.model;
-            if (chunk.id) responseId = chunk.id;
-            if (chunk.usage) totalUsage = chunk.usage;
-
-            const choice = chunk.choices?.[0];
-            if (!choice) return;
-            if (choice.finish_reason) finishReason = choice.finish_reason;
-
-            const delta = choice.delta;
-            if (!delta) return;
-
-            // Handle content streaming (only on first iteration)
-            if (delta.content && agentLoopIterations === 1) {
-              replyText += delta.content;
-              if (onDelta) onDelta(delta.content);
-            }
-
-            // Handle tool calls
-            if (delta.tool_calls) {
-              for (const toolCall of delta.tool_calls) {
-                if (toolCall.index !== undefined) {
-                  if (toolCall.index >= toolCalls.length) {
-                    toolCalls.push({ index: toolCall.index, id: "", function: { name: "", arguments: "" } });
-                  }
-                  if (toolCall.id) toolCalls[toolCall.index].id = toolCall.id;
-                  if (toolCall.function?.name) toolCalls[toolCall.index].function.name = toolCall.function.name;
-                  if (toolCall.function?.arguments) toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
-                }
-              }
-            }
-
-            const lpDelta = delta.logprobs?.content;
-            if (Array.isArray(lpDelta)) logprobsContent.push(...lpDelta);
-          };
-
-          streamLoop: while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-            for (const rawLine of lines) {
-              if (rawLine.trim() === "data: [DONE]") break streamLoop;
-              processSseLine(rawLine);
-            }
-          }
-          buffer += decoder.decode();
-          if (buffer.trim()) processSseLine(buffer);
-
-          // Check if we need to process tool calls
-          if (toolCalls.length > 0 && finishReason === "tool_calls") {
-            currentMessages.push({
-              role: "assistant",
-              content: replyText || null,
-              tool_calls: toolCalls.map(tc => ({
-                id: tc.id,
-                type: "function",
-                function: {
-                  name: tc.function.name,
-                  arguments: tc.function.arguments
-                }
-              }))
-            });
-
-            // Process each tool call
-            for (const toolCall of toolCalls) {
-              try {
-                const args = JSON.parse(toolCall.function.arguments);
-                const result = executeTool(toolCall.function.name, args);
-                addToolAction(toolCall.function.name, args, result);
-                currentMessages.push({
-                  role: "user",
-                  content: `Tool result for ${toolCall.function.name}: ${result}`
-                });
-              } catch (e) {
-                currentMessages.push({
-                  role: "user",
-                  content: `Error calling ${toolCall.function.name}: ${e.message}`
-                });
-              }
-            }
-            replyText = "";
-            toolCalls = [];
-            finishReason = null;
-            continue;
-          }
-
-          finalReply = replyText;
-          break;
+          // When the user picks the 'Reproducible' preset (temperature 0),
+          // pin OpenAI's sampler to a fixed seed so every student who sends
+          // the same prompt gets byte-identical output. Best-effort per the
+          // API reference â€” and without this, temp 0 alone is still subject
+          // to backend variance.
+          if (temperature === 0) payload.seed = 42;
+        }
+        if (model.startsWith("gpt-3.5")) {
+          payload.max_tokens = max_tokens;
+        } else {
+          payload.max_completion_tokens = max_tokens;
         }
 
+        let response;
+        try {
+          response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch {
+          throw new Error("Network error while contacting OpenAI. Check your internet connection, browser privacy extensions, and whether api.openai.com is blocked.");
+        }
+        if (!response.ok) {
+          // Streaming errors are still returned as a single JSON error body.
+          const body = await response.json().catch(() => ({}));
+          const msg = body?.error?.message ?? `HTTP ${response.status}`;
+          throw new Error(msg);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let replyText = "";
+        let usage = null;
+        let finishReason = null;
+        let modelSnapshot = null;
+        let id = null;
+        const logprobsContent = [];
+
+        // Consume SSE events. One self-contained parser that handles both the
+        // per-chunk deltas and any trailing data line the server may have
+        // sent without a final newline.
+        const processSseLine = (rawLine) => {
+          const line = rawLine.trim();
+          if (!line.startsWith("data:")) return;
+          const data = line.slice(5).trim();
+          if (!data || data === "[DONE]") return;
+          let chunk;
+          try { chunk = JSON.parse(data); } catch { return; }
+          if (chunk.error) throw new Error(chunk.error.message || "Streaming error");
+          if (chunk.model) modelSnapshot = chunk.model;
+          if (chunk.id) id = chunk.id;
+          if (chunk.usage) usage = chunk.usage;
+          const choice = chunk.choices?.[0];
+          if (!choice) return;
+          if (choice.finish_reason) finishReason = choice.finish_reason;
+          const delta = choice.delta?.content;
+          if (delta) {
+            replyText += delta;
+            if (onDelta) onDelta(delta);
+          }
+          const lpDelta = choice.logprobs?.content;
+          if (Array.isArray(lpDelta)) logprobsContent.push(...lpDelta);
+        };
+
+        streamLoop: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const rawLine of lines) {
+            if (rawLine.trim() === "data: [DONE]") break streamLoop;
+            processSseLine(rawLine);
+          }
+        }
+        // Flush the decoder and any trailing line the server didn't
+        // terminate with a newline â€” otherwise we'd silently drop the last
+        // data event when the stream ends without a final \n.
+        buffer += decoder.decode();
+        if (buffer.trim()) processSseLine(buffer);
+
         return {
-          reply: finalReply,
-          usage: totalUsage,
+          reply: replyText,
+          usage,
           finish_reason: finishReason,
           model_snapshot: modelSnapshot,
-          id: responseId,
+          id,
           logprobs: logprobsContent.length ? logprobsContent : null,
         };
       }
+
       function addMessage(role, text) {
         const wrap = document.createElement("div");
         wrap.className = `turn ${role}`;
@@ -3603,5 +3541,4 @@ Preset use cases (temperature Â· top-p):
     </script>
   </body>
 </html>
-
 
